@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
 
 export class CallGraphPanel {
 	public static readonly viewType = 'crabviz.callgraph';
@@ -13,7 +15,7 @@ export class CallGraphPanel {
 	public constructor(extensionUri: vscode.Uri) {
 		this._extensionUri = extensionUri;
 
-		const panel = vscode.window.createWebviewPanel(CallGraphPanel.viewType, `Crabviz #${CallGraphPanel.num}`, vscode.ViewColumn.One, {
+		const panel = vscode.window.createWebviewPanel(CallGraphPanel.viewType, `Crabviz Debug #${CallGraphPanel.num}`, vscode.ViewColumn.One, {
 			localResourceRoots: [
 				vscode.Uri.joinPath(this._extensionUri, 'media')
 			],
@@ -29,7 +31,9 @@ export class CallGraphPanel {
 				switch (message.command) {
 					case 'saveSVG':
 						this.saveSVG(message.svg);
-
+						break;
+					case 'saveJSON':
+						this.saveJSON(message.svg);
 						break;
 				}
 			},
@@ -95,15 +99,22 @@ export class CallGraphPanel {
 					<title>crabviz</title>
 			</head>
 			<body data-vscode-context='{ "preventDefaultContextMenuItems": true }'>
-					${svg}
+					<span class="main-container">
+						<span class="crabviz-title">Crabviz Debug #${CallGraphPanel.num - 1}</span>
+						<span>${svg}</span>
+						<span class="carbviz-toolbar">
+							<button id="exportSVG" class="crabviz-button">Export SVG</button>
+							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
+						</span>
+					</span>
+
 
 					<script nonce="${nonce}">
 						const graph = new CallGraph(document.querySelector("svg"), ${focusMode});
 						graph.activate();
-						exportSVG(); // Call exportSVG() after graph activation
 
 						panzoom(graph.svg, {
-							minZoom: 1,
+							minZoom: 0.5,
 							smoothScroll: false,
 							zoomDoubleClickSpeed: 1
 						});
@@ -117,29 +128,84 @@ export class CallGraphPanel {
 		this._panel.webview.postMessage({ command: 'exportSVG' });
 	}
 
+	public exportCrabViz() {
+		this._panel.webview.postMessage({ command: 'exportCrabViz' });
+	}
+
+	public exportJSON(){
+		console.debug("Exporting JSON metadata");
+		this._panel.webview.postMessage({ command: 'saveJSON' });
+	}
+
+	saveJSON(svg: string) {
+		console.debug("Saving JSON metadata");
+		let json;
+		try{
+			json = JSON.parse(svg);
+		}catch (e) {
+			vscode.window.showErrorMessage(`Error parsing JSON: ${e}`);
+		}
+		
+		console.debug("Saving JSON metadata:", json);
+		const writeData = Buffer.from(JSON.stringify(json, null, 2), 'utf8');
+
+		vscode.window.showSaveDialog({
+			saveLabel: "export",
+			filters: { 'JSON': ['json'] },
+		}).then((fileUri) => {
+			if (fileUri) {
+				try {
+					vscode.workspace.fs.writeFile(fileUri, writeData)
+						.then(() => {
+							console.log("File Saved");
+						}, (err: any) => {
+							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
+						});
+				} catch (err) {
+					vscode.window.showErrorMessage(`Error on writing file: ${err}`);
+				}
+			}
+		});
+	}
+
 	saveSVG(svg: string) {
 		const writeData = Buffer.from(svg, 'utf8');
-		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-		const fileName = `${timestamp}.svg`;
 		
-		// 使用用户的工作区或系统临时目录作为默认保存位置
-		let defaultPath;
+		// 确定默认保存路径
+		let defaultPath: string | undefined;
+		
+		// 优先使用工作区文件夹
 		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-			// 使用第一个工作区文件夹
-			defaultPath = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, fileName);
+			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 		} else {
-			// 如果没有工作区，使用系统临时目录
-			const os = require('os');
-			defaultPath = vscode.Uri.file(`${os.tmpdir()}/${fileName}`);
+			// 否则使用系统临时目录
+			defaultPath = os.tmpdir();
 		}
-	
-		vscode.workspace.fs.writeFile(defaultPath, writeData)
-			.then(() => {
-				console.log("File Saved");
-				vscode.window.showInformationMessage(`SVG saved to ${defaultPath.fsPath}`);
-			}, (err: any) => {
-				vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-			});
+		
+		// 创建带时间戳的文件名
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.svg`);
+		
+		// 允许用户选择保存位置，但提供默认路径
+		vscode.window.showSaveDialog({
+			saveLabel: "export",
+			defaultUri: vscode.Uri.file(defaultFilePath),
+			filters: { 'Images': ['svg'] },
+		}).then((fileUri) => {
+			if (fileUri) {
+				try {
+					vscode.workspace.fs.writeFile(fileUri, writeData)
+						.then(() => {
+							console.log("File Saved");
+							vscode.window.showInformationMessage(`SVG saved to ${fileUri.fsPath}`);
+						}, (err : any) => {
+							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
+						});
+				} catch (err) {
+					vscode.window.showErrorMessage(`Error on writing file: ${err}`);
+				}
+			}
+		});
 	}
 }
 
