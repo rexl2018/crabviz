@@ -44,6 +44,10 @@
       {
         "command": "crabviz.exportJSON",
         "title": "Export Crabviz JSON"
+      },
+      {
+        "command": "crabviz.exportDot",
+        "title": "Export Dot File"
       }
     ],
     "menus": {
@@ -66,6 +70,10 @@
         },
         {
           "command": "crabviz.exportJSON",
+          "when": "never"
+        },
+        {
+          "command": "crabviz.exportDot",
           "when": "never"
         }
       ],
@@ -93,6 +101,10 @@
         },
         {
           "command": "crabviz.exportJSON",
+          "when": "webviewId == 'crabviz.callgraph'"
+        },
+        {
+          "command": "crabviz.exportDot",
           "when": "webviewId == 'crabviz.callgraph'"
         }
       ]

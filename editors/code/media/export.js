@@ -59,7 +59,7 @@ function saveJSON() {
       exportTime: new Date().toISOString(),
       graphType: 'crabviz'
     }
-  };
+};
   
   vscode.postMessage({
     command: 'saveJSON',
@@ -69,6 +69,28 @@ function saveJSON() {
 
 // 初始化VSCode API
 const vscode = acquireVsCodeApi();
+
+function exportDot() {
+  // 直接请求后端生成并保存dot文件
+  vscode.postMessage({
+    command: 'exportDot'
+  });
+}
+
+// 获取DOT源代码并发送回后端
+function getDotSource() {
+  // 我们不再从SVG中提取数据构建DOT源代码
+  // 而是请求后端提供已经生成好的DOT源代码
+  
+  // 从后端获取DOT源代码
+  // 这里我们只是发送一个请求，实际的DOT源代码会由后端提供
+  vscode.postMessage({
+    command: 'getDotSource'
+  });
+  
+  // 注意：后端会返回dotSourceResponse消息，包含完整的DOT源代码
+  // 然后由消息处理器将DOT源代码发送回后端进行保存
+}
 
 // 监听来自VSCode扩展的消息
 window.addEventListener('message', (e) => {
@@ -84,6 +106,19 @@ window.addEventListener('message', (e) => {
     case 'saveJSON':
         saveJSON();
         break;
+    case 'exportDot':
+        exportDot();
+        break;
+    case 'getDotSource':
+        getDotSource();
+        break;
+    case 'dotSourceResponse':
+        // 收到后端发送的DOT源代码，将其发送回后端进行保存
+        vscode.postMessage({
+          command: 'dotSourceResponse',
+          dotSource: message.dotSource
+        });
+        break;
   }
 });
 
@@ -94,14 +129,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportSVGButton) {
     exportSVGButton.addEventListener('click', exportSVG);
   }
-  
+
   const exportCrabVizButton = document.getElementById('exportCrabViz');
   if (exportCrabVizButton) {
     exportCrabVizButton.addEventListener('click', exportCrabViz);
   }
-  
+
   const exportJSONButton = document.getElementById('exportJSON');
   if (exportJSONButton) {
     exportJSONButton.addEventListener('click', saveJSON);
+  }
+
+  const exportDotButton = document.getElementById('exportDot');
+  if (exportDotButton) {
+    exportDotButton.addEventListener('click', exportDot);
   }
 });

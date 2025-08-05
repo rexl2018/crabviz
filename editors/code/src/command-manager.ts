@@ -76,6 +76,9 @@ export class CommandManager {
 			return;
 		}
 
+		// 在外部创建generator变量，以便在then回调中可用
+		const generator = new Generator(root.uri, lang);
+
 		vscode.window.withProgress({
 			location: vscode.ProgressLocation.Notification,
 			title: "Crabviz: Generating call graph",
@@ -83,13 +86,14 @@ export class CommandManager {
 		}, (progress, token) => {
 			token.onCancellationRequested(() => cancelled = true);
 
-			const generator = new Generator(root.uri, lang);
 			return generator.generateCallGraph(files.get(lang)!, progress, token);
 		})
 		.then(svg => {
 			if (cancelled) { return; }
 
 			const panel = new CallGraphPanel(this.context.extensionUri);
+			// 设置当前的Generator实例，以便在导出DOT文件时能够访问它
+			CallGraphPanel.setCurrentGenerator(generator);
 			panel.showCallGraph(svg, false);
 		});
 	}
@@ -120,6 +124,8 @@ export class CommandManager {
 			}
 
 			const panel = new CallGraphPanel(this.context.extensionUri);
+			// 设置当前的Generator实例，以便在导出DOT文件时能够访问它
+			CallGraphPanel.setCurrentGenerator(generator);
 			panel.showCallGraph(svg, true);
 		});
 	}

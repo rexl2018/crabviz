@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
+import { Generator } from './generator';
+import { GraphGenerator } from '../crabviz';
 
 export class CallGraphPanel {
 	public static readonly viewType = 'crabviz.callgraph';
@@ -11,6 +13,7 @@ export class CallGraphPanel {
 	private readonly _panel: vscode.WebviewPanel;
 	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
+	private static _currentGenerator: Generator | null = null; // 存储当前的Generator实例
 
 	public constructor(extensionUri: vscode.Uri) {
 		this._extensionUri = extensionUri;
@@ -34,6 +37,15 @@ export class CallGraphPanel {
 						break;
 					case 'saveJSON':
 						this.saveJSON(message.svg);
+						break;
+					case 'exportDot':
+						this.saveDot();
+						break;
+					case 'getDotSource':
+						this.handleGetDotSource();
+						break;
+					case 'dotSourceResponse':
+						this.saveDotFile(message.dotSource);
 						break;
 				}
 			},
@@ -106,6 +118,7 @@ export class CallGraphPanel {
 							<button id="exportSVG" class="crabviz-button">Export SVG</button>
 							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
 							<button id="exportJSON" class="crabviz-button">Export JSON</button>
+							<button id="exportDot" class="crabviz-button">Export DOT</button>
 						</span>
 					</span>
 
@@ -130,6 +143,9 @@ export class CallGraphPanel {
 						document.getElementById('exportJSON').addEventListener('click', function() {
 							acquireVsCodeApi().postMessage({ command: 'saveJSON' });
 						});
+						document.getElementById('exportDot').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'exportDot' });
+						});
 					</script>
 			</body>
 			</html>`;
@@ -147,6 +163,89 @@ export class CallGraphPanel {
 	public exportJSON(){
 		console.debug("Exporting JSON metadata");
 		this._panel.webview.postMessage({ command: 'saveJSON' });
+	}
+
+	public exportDot(){
+		console.debug("Exporting DOT file");
+		this._panel.webview.postMessage({ command: 'exportDot' });
+	}
+
+	public saveDot() {
+		console.debug("Saving DOT file");
+		// 获取DOT源代码
+		this._panel.webview.postMessage({ command: 'getDotSource' });
+	}
+
+	// 添加处理getDotSource命令的方法
+	private handleGetDotSource() {
+		// 从Generator获取DOT源代码
+		if (CallGraphPanel._currentGenerator) {
+			// 使用Generator实例的公共方法获取DOT源代码
+			const dotSource = CallGraphPanel._currentGenerator.generateDotSource();
+			// 发送dotSourceResponse消息，包含DOT源代码
+			this._panel.webview.postMessage({
+				command: 'dotSourceResponse',
+				dotSource: dotSource
+			});
+		} else {
+			// 如果没有Generator实例，显示错误消息
+			vscode.window.showErrorMessage('No call graph generator available');
+			// 发送空的DOT源代码
+			this._panel.webview.postMessage({
+				command: 'dotSourceResponse',
+				dotSource: '// No call graph generator available'
+			});
+		}
+	}
+
+	// 添加设置当前Generator实例的方法
+	public static setCurrentGenerator(generator: Generator) {
+		CallGraphPanel._currentGenerator = generator;
+	}
+
+	public saveDotFile(dotSource: string) {
+		console.debug("Processing DOT file save");
+		if (!dotSource) {
+			vscode.window.showErrorMessage('No DOT source available');
+			return;
+		}
+
+		const writeData = Buffer.from(dotSource, 'utf8');
+		
+		// 确定默认保存路径
+		let defaultPath: string | undefined;
+		
+		// 优先使用工作区文件夹
+		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+		} else {
+			// 否则使用系统临时目录
+			defaultPath = os.tmpdir();
+		}
+		
+		// 创建带时间戳的文件名
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.dot`);
+
+		vscode.window.showSaveDialog({
+			saveLabel: "export",
+			defaultUri: vscode.Uri.file(defaultFilePath),
+			filters: { 'DOT': ['dot'] },
+		}).then((fileUri) => {
+			if (fileUri) {
+				try {
+					vscode.workspace.fs.writeFile(fileUri, writeData)
+						.then(() => {
+							console.log("DOT File Saved");
+							vscode.window.showInformationMessage(`DOT file saved to ${fileUri.fsPath}`);
+						}, (err: any) => {
+							vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
+						});
+				} catch (err) {
+					vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
+				}
+			}
+		});
 	}
 
 	saveJSON(svg: string) {
