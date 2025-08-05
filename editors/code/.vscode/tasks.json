@@ -35,6 +35,17 @@
 				"npm: watch-tests"
 			],
 			"problemMatcher": []
+		},
+		{
+			"label": "build-wasm",
+			"type": "shell",
+			"command": "cd ${workspaceFolder}/.. && wasm-pack build --target web --features vscode && mkdir -p ${workspaceFolder}/crabviz && cp ../pkg/crabviz_bg.wasm ${workspaceFolder}/crabviz/index_bg.wasm && cp ../pkg/crabviz.js ${workspaceFolder}/crabviz/index.js",
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"group": "build"
 		}
 	]
 }

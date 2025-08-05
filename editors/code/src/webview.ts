@@ -105,6 +105,7 @@ export class CallGraphPanel {
 						<span class="carbviz-toolbar">
 							<button id="exportSVG" class="crabviz-button">Export SVG</button>
 							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
+							<button id="exportJSON" class="crabviz-button">Export JSON</button>
 						</span>
 					</span>
 
@@ -117,6 +118,17 @@ export class CallGraphPanel {
 							minZoom: 0.5,
 							smoothScroll: false,
 							zoomDoubleClickSpeed: 1
+						});
+
+						// 添加按钮事件监听器
+						document.getElementById('exportSVG').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'exportSVG' });
+						});
+						document.getElementById('exportCrabViz').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'exportCrabViz' });
+						});
+						document.getElementById('exportJSON').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'saveJSON' });
 						});
 					</script>
 			</body>
@@ -144,13 +156,30 @@ export class CallGraphPanel {
 			json = JSON.parse(svg);
 		}catch (e) {
 			vscode.window.showErrorMessage(`Error parsing JSON: ${e}`);
+			return; // 解析失败时提前返回，避免继续执行
 		}
 		
 		console.debug("Saving JSON metadata:", json);
 		const writeData = Buffer.from(JSON.stringify(json, null, 2), 'utf8');
 
+		// 确定默认保存路径
+		let defaultPath: string | undefined;
+		
+		// 优先使用工作区文件夹
+		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+		} else {
+			// 否则使用系统临时目录
+			defaultPath = os.tmpdir();
+		}
+		
+		// 创建带时间戳的文件名
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const defaultFilePath = path.join(defaultPath, `crabviz-data-${timestamp}.json`);
+
 		vscode.window.showSaveDialog({
 			saveLabel: "export",
+			defaultUri: vscode.Uri.file(defaultFilePath),
 			filters: { 'JSON': ['json'] },
 		}).then((fileUri) => {
 			if (fileUri) {
@@ -158,6 +187,7 @@ export class CallGraphPanel {
 					vscode.workspace.fs.writeFile(fileUri, writeData)
 						.then(() => {
 							console.log("File Saved");
+							vscode.window.showInformationMessage(`JSON data saved to ${fileUri.fsPath}`);
 						}, (err: any) => {
 							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
 						});
@@ -167,8 +197,7 @@ export class CallGraphPanel {
 			}
 		});
 	}
-
-	saveSVG(svg: string) {
+	public saveSVG(svg: string) {
 		const writeData = Buffer.from(svg, 'utf8');
 		
 		// 确定默认保存路径
