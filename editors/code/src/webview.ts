@@ -100,6 +100,7 @@ export class CallGraphPanel {
 					<script nonce="${nonce}">
 						const graph = new CallGraph(document.querySelector("svg"), ${focusMode});
 						graph.activate();
+						exportSVG(); // Call exportSVG() after graph activation
 
 						panzoom(graph.svg, {
 							minZoom: 1,
@@ -118,24 +119,27 @@ export class CallGraphPanel {
 
 	saveSVG(svg: string) {
 		const writeData = Buffer.from(svg, 'utf8');
-
-		vscode.window.showSaveDialog({
-			saveLabel: "export",
-			filters: { 'Images': ['svg'] },
-		}).then((fileUri) => {
-			if (fileUri) {
-				try {
-					vscode.workspace.fs.writeFile(fileUri, writeData)
-						.then(() => {
-							console.log("File Saved");
-						}, (err : any) => {
-							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-						});
-				} catch (err) {
-					vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-				}
-			}
-		});
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const fileName = `${timestamp}.svg`;
+		
+		// 使用用户的工作区或系统临时目录作为默认保存位置
+		let defaultPath;
+		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+			// 使用第一个工作区文件夹
+			defaultPath = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, fileName);
+		} else {
+			// 如果没有工作区，使用系统临时目录
+			const os = require('os');
+			defaultPath = vscode.Uri.file(`${os.tmpdir()}/${fileName}`);
+		}
+	
+		vscode.workspace.fs.writeFile(defaultPath, writeData)
+			.then(() => {
+				console.log("File Saved");
+				vscode.window.showInformationMessage(`SVG saved to ${defaultPath.fsPath}`);
+			}, (err: any) => {
+				vscode.window.showErrorMessage(`Error on writing file: ${err}`);
+			});
 	}
 }
 
