@@ -2,8 +2,8 @@
   "name": "crabviz",
   "displayName": "Crabviz",
   "description": "interactive call graph generator",
-  "version": "0.4.0",
-  "publisher": "chanhx",
+  "version": "1.4.0",
+  "publisher": "Rex",
   "author": {
     "name": "Chan HoCheung"
   },
@@ -36,6 +36,14 @@
       {
         "command": "crabviz.exportCallGraph",
         "title": "Export Call Graph"
+      },
+      {
+        "command": "crabviz.exportCrabViz",
+        "title": "Export Crabviz SVG"
+      },
+      {
+        "command": "crabviz.exportJSON",
+        "title": "Export Crabviz JSON"
       }
     ],
     "menus": {
@@ -50,6 +58,14 @@
         },
         {
           "command": "crabviz.exportCallGraph",
+          "when": "never"
+        },
+        {
+          "command": "crabviz.exportCrabViz",
+          "when": "never"
+        },
+        {
+          "command": "crabviz.exportJSON",
           "when": "never"
         }
       ],
@@ -69,6 +85,14 @@
       "webview/context": [
         {
           "command": "crabviz.exportCallGraph",
+          "when": "webviewId == 'crabviz.callgraph'"
+        },
+        {
+          "command": "crabviz.exportCrabViz",
+          "when": "webviewId == 'crabviz.callgraph'"
+        },
+        {
+          "command": "crabviz.exportJSON",
           "when": "webviewId == 'crabviz.callgraph'"
         }
       ]
