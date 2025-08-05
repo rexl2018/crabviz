@@ -22,6 +22,11 @@ export class Generator {
     this.inner = new GraphGenerator(this.root, lang);
   }
 
+  // Public method to access DOT source
+  public generateDotSource(): string {
+    return this.inner.generate_dot_source();
+  }
+
   public async generateCallGraph(
     files: vscode.Uri[],
     progress: vscode.Progress<{ message?: string; increment?: number }>,

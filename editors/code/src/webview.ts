@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
+import { Generator } from './generator';
+import { GraphGenerator } from '../crabviz';
 
 export class CallGraphPanel {
 	public static readonly viewType = 'crabviz.callgraph';
@@ -11,6 +13,7 @@ export class CallGraphPanel {
 	private readonly _panel: vscode.WebviewPanel;
 	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
+	private static _currentGenerator: Generator | null = null; // 存储当前的Generator实例
 
 	public constructor(extensionUri: vscode.Uri) {
 		this._extensionUri = extensionUri;
@@ -37,6 +40,9 @@ export class CallGraphPanel {
 						break;
 					case 'exportDot':
 						this.saveDot();
+						break;
+					case 'getDotSource':
+						this.handleGetDotSource();
 						break;
 					case 'dotSourceResponse':
 						this.saveDotFile(message.dotSource);
@@ -168,6 +174,33 @@ export class CallGraphPanel {
 		console.debug("Saving DOT file");
 		// 获取DOT源代码
 		this._panel.webview.postMessage({ command: 'getDotSource' });
+	}
+
+	// 添加处理getDotSource命令的方法
+	private handleGetDotSource() {
+		// 从Generator获取DOT源代码
+		if (CallGraphPanel._currentGenerator) {
+			// 使用Generator实例的公共方法获取DOT源代码
+			const dotSource = CallGraphPanel._currentGenerator.generateDotSource();
+			// 发送dotSourceResponse消息，包含DOT源代码
+			this._panel.webview.postMessage({
+				command: 'dotSourceResponse',
+				dotSource: dotSource
+			});
+		} else {
+			// 如果没有Generator实例，显示错误消息
+			vscode.window.showErrorMessage('No call graph generator available');
+			// 发送空的DOT源代码
+			this._panel.webview.postMessage({
+				command: 'dotSourceResponse',
+				dotSource: '// No call graph generator available'
+			});
+		}
+	}
+
+	// 添加设置当前Generator实例的方法
+	public static setCurrentGenerator(generator: Generator) {
+		CallGraphPanel._currentGenerator = generator;
 	}
 
 	public saveDotFile(dotSource: string) {

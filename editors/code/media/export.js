@@ -79,49 +79,17 @@ function exportDot() {
 
 // 获取DOT源代码并发送回后端
 function getDotSource() {
-  // 获取当前图形的DOT源代码
-  const svg = document.querySelector("svg");
-  if (!svg) {
-    console.error("No SVG found to export DOT.");
-    return;
-  }
+  // 我们不再从SVG中提取数据构建DOT源代码
+  // 而是请求后端提供已经生成好的DOT源代码
   
-  // 从SVG中提取数据，构建DOT源代码
-  // 这里我们需要从SVG中提取节点和边的信息，然后构建DOT语言格式
-  const nodes = Array.from(svg.querySelectorAll('g.node'));
-  const edges = Array.from(svg.querySelectorAll('g.edge'));
-  
-  // 构建DOT源代码
-  let dotSource = "digraph G {\n";
-  dotSource += "  graph [rankdir=LR, fontname=\"Arial\"];\n";
-  dotSource += "  node [shape=box, style=filled, fillcolor=lightblue, fontname=\"Arial\"];\n";
-  dotSource += "  edge [fontname=\"Arial\"];\n\n";
-  
-  // 添加节点
-  nodes.forEach(node => {
-    const id = node.id;
-    const label = node.querySelector('text')?.textContent || id;
-    dotSource += `  "${id}" [label="${label.replace(/"/g, '\\"')}"];\n`;
-  });
-  
-  dotSource += "\n";
-  
-  // 添加边
-  edges.forEach(edge => {
-    const from = edge.getAttribute('edge-from') || '';
-    const to = edge.getAttribute('edge-to') || '';
-    if (from && to) {
-      dotSource += `  "${from}" -> "${to}";\n`;
-    }
-  });
-  
-  dotSource += "}";
-  
-  // 发送DOT源代码回后端
+  // 从后端获取DOT源代码
+  // 这里我们只是发送一个请求，实际的DOT源代码会由后端提供
   vscode.postMessage({
-    command: 'dotSourceResponse',
-    dotSource: dotSource
+    command: 'getDotSource'
   });
+  
+  // 注意：后端会返回dotSourceResponse消息，包含完整的DOT源代码
+  // 然后由消息处理器将DOT源代码发送回后端进行保存
 }
 
 // 监听来自VSCode扩展的消息
@@ -143,6 +111,13 @@ window.addEventListener('message', (e) => {
         break;
     case 'getDotSource':
         getDotSource();
+        break;
+    case 'dotSourceResponse':
+        // 收到后端发送的DOT源代码，将其发送回后端进行保存
+        vscode.postMessage({
+          command: 'dotSourceResponse',
+          dotSource: message.dotSource
+        });
         break;
   }
 });
