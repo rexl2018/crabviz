@@ -59,7 +59,7 @@ function saveJSON() {
       exportTime: new Date().toISOString(),
       graphType: 'crabviz'
     }
-  };
+};
   
   vscode.postMessage({
     command: 'saveJSON',
@@ -69,6 +69,60 @@ function saveJSON() {
 
 // 初始化VSCode API
 const vscode = acquireVsCodeApi();
+
+function exportDot() {
+  // 直接请求后端生成并保存dot文件
+  vscode.postMessage({
+    command: 'exportDot'
+  });
+}
+
+// 获取DOT源代码并发送回后端
+function getDotSource() {
+  // 获取当前图形的DOT源代码
+  const svg = document.querySelector("svg");
+  if (!svg) {
+    console.error("No SVG found to export DOT.");
+    return;
+  }
+  
+  // 从SVG中提取数据，构建DOT源代码
+  // 这里我们需要从SVG中提取节点和边的信息，然后构建DOT语言格式
+  const nodes = Array.from(svg.querySelectorAll('g.node'));
+  const edges = Array.from(svg.querySelectorAll('g.edge'));
+  
+  // 构建DOT源代码
+  let dotSource = "digraph G {\n";
+  dotSource += "  graph [rankdir=LR, fontname=\"Arial\"];\n";
+  dotSource += "  node [shape=box, style=filled, fillcolor=lightblue, fontname=\"Arial\"];\n";
+  dotSource += "  edge [fontname=\"Arial\"];\n\n";
+  
+  // 添加节点
+  nodes.forEach(node => {
+    const id = node.id;
+    const label = node.querySelector('text')?.textContent || id;
+    dotSource += `  "${id}" [label="${label.replace(/"/g, '\\"')}"];\n`;
+  });
+  
+  dotSource += "\n";
+  
+  // 添加边
+  edges.forEach(edge => {
+    const from = edge.getAttribute('edge-from') || '';
+    const to = edge.getAttribute('edge-to') || '';
+    if (from && to) {
+      dotSource += `  "${from}" -> "${to}";\n`;
+    }
+  });
+  
+  dotSource += "}";
+  
+  // 发送DOT源代码回后端
+  vscode.postMessage({
+    command: 'dotSourceResponse',
+    dotSource: dotSource
+  });
+}
 
 // 监听来自VSCode扩展的消息
 window.addEventListener('message', (e) => {
@@ -84,6 +138,12 @@ window.addEventListener('message', (e) => {
     case 'saveJSON':
         saveJSON();
         break;
+    case 'exportDot':
+        exportDot();
+        break;
+    case 'getDotSource':
+        getDotSource();
+        break;
   }
 });
 
@@ -94,14 +154,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (exportSVGButton) {
     exportSVGButton.addEventListener('click', exportSVG);
   }
-  
+
   const exportCrabVizButton = document.getElementById('exportCrabViz');
   if (exportCrabVizButton) {
     exportCrabVizButton.addEventListener('click', exportCrabViz);
   }
-  
+
   const exportJSONButton = document.getElementById('exportJSON');
   if (exportJSONButton) {
     exportJSONButton.addEventListener('click', saveJSON);
+  }
+
+  const exportDotButton = document.getElementById('exportDot');
+  if (exportDotButton) {
+    exportDotButton.addEventListener('click', exportDot);
   }
 });

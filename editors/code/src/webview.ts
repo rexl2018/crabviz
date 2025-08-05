@@ -35,6 +35,12 @@ export class CallGraphPanel {
 					case 'saveJSON':
 						this.saveJSON(message.svg);
 						break;
+					case 'exportDot':
+						this.saveDot();
+						break;
+					case 'dotSourceResponse':
+						this.saveDotFile(message.dotSource);
+						break;
 				}
 			},
 			null,
@@ -106,6 +112,7 @@ export class CallGraphPanel {
 							<button id="exportSVG" class="crabviz-button">Export SVG</button>
 							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
 							<button id="exportJSON" class="crabviz-button">Export JSON</button>
+							<button id="exportDot" class="crabviz-button">Export DOT</button>
 						</span>
 					</span>
 
@@ -130,6 +137,9 @@ export class CallGraphPanel {
 						document.getElementById('exportJSON').addEventListener('click', function() {
 							acquireVsCodeApi().postMessage({ command: 'saveJSON' });
 						});
+						document.getElementById('exportDot').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'exportDot' });
+						});
 					</script>
 			</body>
 			</html>`;
@@ -147,6 +157,62 @@ export class CallGraphPanel {
 	public exportJSON(){
 		console.debug("Exporting JSON metadata");
 		this._panel.webview.postMessage({ command: 'saveJSON' });
+	}
+
+	public exportDot(){
+		console.debug("Exporting DOT file");
+		this._panel.webview.postMessage({ command: 'exportDot' });
+	}
+
+	public saveDot() {
+		console.debug("Saving DOT file");
+		// 获取DOT源代码
+		this._panel.webview.postMessage({ command: 'getDotSource' });
+	}
+
+	public saveDotFile(dotSource: string) {
+		console.debug("Processing DOT file save");
+		if (!dotSource) {
+			vscode.window.showErrorMessage('No DOT source available');
+			return;
+		}
+
+		const writeData = Buffer.from(dotSource, 'utf8');
+		
+		// 确定默认保存路径
+		let defaultPath: string | undefined;
+		
+		// 优先使用工作区文件夹
+		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+		} else {
+			// 否则使用系统临时目录
+			defaultPath = os.tmpdir();
+		}
+		
+		// 创建带时间戳的文件名
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+		const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.dot`);
+
+		vscode.window.showSaveDialog({
+			saveLabel: "export",
+			defaultUri: vscode.Uri.file(defaultFilePath),
+			filters: { 'DOT': ['dot'] },
+		}).then((fileUri) => {
+			if (fileUri) {
+				try {
+					vscode.workspace.fs.writeFile(fileUri, writeData)
+						.then(() => {
+							console.log("DOT File Saved");
+							vscode.window.showInformationMessage(`DOT file saved to ${fileUri.fsPath}`);
+						}, (err: any) => {
+							vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
+						});
+				} catch (err) {
+					vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
+				}
+			}
+		});
 	}
 
 	saveJSON(svg: string) {

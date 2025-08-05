@@ -26,6 +26,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('crabviz.exportJSON', () => {
 			CallGraphPanel.currentPanel?.exportJSON();
 		}),
+		vscode.commands.registerCommand('crabviz.exportDot', () => {
+			CallGraphPanel.currentPanel?.exportDot();
+		}),
 	);
 }
 
