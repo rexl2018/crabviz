@@ -77,6 +77,12 @@ function exportDot() {
   });
 }
 
+function exportMermaid() {
+  vscode.postMessage({
+    command: 'exportMermaid'
+  });
+}
+
 // 获取DOT源代码并发送回后端
 function getDotSource() {
   // 我们不再从SVG中提取数据构建DOT源代码
@@ -112,6 +118,9 @@ window.addEventListener('message', (e) => {
     case 'getDotSource':
         getDotSource();
         break;
+    case 'exportMermaid':
+        exportMermaid();
+        break;
     case 'dotSourceResponse':
         // 收到后端发送的DOT源代码，将其发送回后端进行保存
         vscode.postMessage({
@@ -143,5 +152,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportDotButton = document.getElementById('exportDot');
   if (exportDotButton) {
     exportDotButton.addEventListener('click', exportDot);
+  }
+
+  const exportMermaidButton = document.getElementById('exportMermaid');
+  if (exportMermaidButton) {
+    exportMermaidButton.addEventListener('click', exportMermaid);
   }
 });

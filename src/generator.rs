@@ -138,6 +138,173 @@ impl GraphGenerator {
         self.interfaces.insert(location, implementations);
     }
 
+    pub fn generate_mermaid_source(&self) -> String {
+        let files = &self.files;
+
+        // 构建表格和单元格ID，与generate_dot_source类似
+        let mut tables = files
+            .values()
+            .map(|file| {
+                let mut table = self.lang.file_repr(file);
+                if let Some(cells) = self.highlights.get(&file.id) {
+                    table.highlight_cells(cells);
+                }
+
+                (file.id, table)
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut cell_ids = HashSet::new();
+        tables
+            .iter()
+            .flat_map(|(_, tbl)| tbl.sections.iter().map(|cell| (tbl.id, cell)))
+            .for_each(|(tid, cell)| self.collect_cell_ids(tid, cell, &mut cell_ids));
+        let cell_ids_ref = &cell_ids;
+
+        let updated_files = RefCell::new(HashSet::new());
+        let updated_files_ref = &updated_files;
+
+        let inserted_symbols = RefCell::new(HashSet::new());
+        let inserted_symbols_ref = &inserted_symbols;
+
+        // 收集边，与generate_dot_source类似
+        let incoming_calls = self
+            .incoming_calls
+            .iter()
+            .filter_map(|(callee, callers)| {
+                let to = callee.location_id(files)?;
+
+                cell_ids.contains(&to).then_some((to, callers))
+            })
+            .flat_map(|(to, calls)| {
+                calls.into_iter().filter_map(move |call| {
+                    let from = call.from.location_id(files)?;
+
+                    (cell_ids_ref.contains(&from)
+                        || inserted_symbols_ref.borrow().contains(&from)
+                        || {
+                            let file = files.get(&call.from.uri.path)? as *const FileOutline;
+
+                            let updated = unsafe {
+                                self.try_insert_symbol(
+                                    &call.from,
+                                    file.cast_mut().as_mut().unwrap(),
+                                )
+                            };
+
+                            if updated {
+                                updated_files_ref
+                                    .borrow_mut()
+                                    .insert(call.from.uri.path.clone());
+                                inserted_symbols_ref.borrow_mut().insert(from);
+                            }
+                            updated
+                        })
+                    .then_some(Edge {
+                        from,
+                        to,
+                        classes: EnumSet::new(),
+                    })
+                })
+            });
+
+        let outgoing_calls = self
+            .outgoing_calls
+            .iter()
+            .filter_map(|(caller, callees)| {
+                let from = caller.location_id(files)?;
+
+                cell_ids.contains(&from).then_some((from, callees))
+            })
+            .flat_map(|(from, callees)| {
+                callees.into_iter().filter_map(move |call| {
+                    let to = call.to.location_id(files)?;
+
+                    cell_ids_ref.contains(&to).then_some(Edge {
+                        from,
+                        to,
+                        classes: EnumSet::new(),
+                    })
+                })
+            });
+
+        let implementations = self
+            .interfaces
+            .iter()
+            .filter_map(|(interface, implementations)| {
+                let to = interface.location_id(files)?;
+
+                cell_ids.contains(&to).then_some((to, implementations))
+            })
+            .flat_map(|(to, implementations)| {
+                implementations.into_iter().filter_map(move |location| {
+                    let from = location.location_id(files)?;
+
+                    cell_ids_ref.contains(&&from).then_some(Edge {
+                        from,
+                        to,
+                        classes: CssClass::Impl.into(),
+                    })
+                })
+            });
+
+        let edges = incoming_calls
+            .chain(outgoing_calls)
+            .chain(implementations)
+            .collect::<HashSet<_>>();
+
+        updated_files.borrow().iter().for_each(|path| {
+            let file = files.get(path).unwrap();
+            let table = tables.get_mut(&file.id).unwrap();
+            *table = self.lang.file_repr(file);
+        });
+
+        // 生成Mermaid格式
+        self.generate_mermaid_from_graph(tables.into_values().collect(), edges.into_iter().collect())
+    }
+
+    fn generate_mermaid_from_graph(&self, tables: Vec<crate::graph::TableNode>, edges: Vec<Edge>) -> String {
+        // 生成Mermaid流程图
+        let mut mermaid = String::from("flowchart LR\n");
+        
+        // 添加节点
+        for table in &tables {
+            for section in &table.sections {
+                self.add_mermaid_cell(table.id, section, &mut mermaid);
+            }
+        }
+        
+        // 添加边
+        for edge in &edges {
+            let from = format!("{}_{}_{}", edge.from.0, edge.from.1, edge.from.2);
+            let to = format!("{}_{}_{}", edge.to.0, edge.to.1, edge.to.2);
+            mermaid.push_str(&format!("    {} --> {}\n", from, to));
+        }
+        
+        mermaid
+    }
+    
+    fn add_mermaid_cell(&self, table_id: u32, cell: &Cell, mermaid: &mut String) {
+        let id = format!("{}_{}_{}", table_id, cell.range_start.0, cell.range_start.1);
+        let label = cell.title.replace('"', "\\\"")
+            .replace('[', "\\[").replace(']', "\\]");
+        
+        mermaid.push_str(&format!("    {}[\"{}\"]", id, label));
+        
+        // 添加样式
+        if !cell.style.classes.is_empty() {
+            let style_class = cell.style.classes.iter().next().unwrap().to_str();
+            mermaid.push_str(&format!(":::{}\n", style_class));
+        } else {
+            mermaid.push_str("\n");
+        }
+        
+        // 递归处理子节点
+        for child in &cell.children {
+            self.add_mermaid_cell(table_id, child, mermaid);
+        }
+    }
+
     pub fn generate_dot_source(&self) -> String {
         let files = &self.files;
 
