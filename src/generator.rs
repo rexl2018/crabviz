@@ -305,32 +305,74 @@ impl GraphGenerator {
             }
         }
         
-        // 为每个文件创建一个subgraph
-        let mut index = 0;
-        for (file_path, file_tables) in &file_tables {
-            // 使用相对于项目根目录的路径作为subgraph标题
+        // 创建目录到文件的映射
+        let mut dir_files: HashMap<PathBuf, Vec<(String, Vec<&crate::graph::TableNode>)>> = HashMap::new();
+        
+        // 将文件按目录分组
+        for (file_path, tables) in &file_tables {
             let path = Path::new(file_path);
-            let root_path = Path::new(&self.root);
-            let title = if let Ok(relative) = path.strip_prefix(root_path) {
-                relative.to_string_lossy()
+            if let Some(parent) = path.parent() {
+                let parent_path = parent.to_path_buf();
+                dir_files.entry(parent_path).or_default().push((file_path.clone(), tables.clone()));
             } else {
-                path.to_string_lossy()
+                // 如果文件没有父目录，将其放入根目录组
+                dir_files.entry(PathBuf::from("")).or_default().push((file_path.clone(), tables.clone()));
+            }
+        }
+        
+        // 为每个目录创建一个subgraph，然后在其中为每个文件创建一个subgraph
+        let mut dir_index = 0;
+        let root_path = Path::new(&self.root);
+        
+        for (dir_path, dir_files) in &dir_files {
+            // 使用相对于项目根目录的目录路径作为subgraph标题，确保以"/"开头
+            let dir_title = if dir_path.as_os_str().is_empty() {
+                "/".to_string() // 根目录使用"/"作为标题
+            } else if let Ok(relative) = dir_path.strip_prefix(root_path) {
+                let rel_str = relative.to_string_lossy().to_string();
+                if rel_str.is_empty() {
+                    "/".to_string()
+                } else {
+                    format!("/{}" , rel_str)
+                }
+            } else {
+                format!("/{}" , dir_path.to_string_lossy())
             };
             
-            // 添加subgraph开始标记 - 使用引号包裹标题以处理特殊字符
-            mermaid.push_str(&format!("    subgraph sg{} [\"{}\"]\n", index, title));
+            // 添加目录级subgraph开始标记 - 确保ID格式正确
+            mermaid.push_str(&format!("    subgraph dir{} [\"{}\"]\n", dir_index, dir_title));
             
-            // 添加当前文件中的所有节点
-            for table in file_tables {
-                for section in &table.sections {
-                    self.add_mermaid_cell(table.id, section, &mut mermaid);
+            // 为目录中的每个文件创建一个subgraph
+            let mut file_index = 0;
+            for (file_path, file_tables) in dir_files {
+                // 使用相对于项目根目录的文件路径作为subgraph标题
+                let path = Path::new(file_path);
+                let file_title = if let Ok(relative) = path.strip_prefix(root_path) {
+                    relative.to_string_lossy()
+                } else {
+                    path.to_string_lossy()
+                };
+                
+                // 添加文件级subgraph开始标记 - 确保ID格式正确
+                mermaid.push_str(&format!("        subgraph file{}_{} [\"{}\"]\n", dir_index, file_index, file_title));
+                
+                // 添加当前文件中的所有节点
+                for table in file_tables {
+                    for section in &table.sections {
+                        self.add_mermaid_cell(table.id, section, &mut mermaid);
+                    }
                 }
+                
+                // 添加文件级subgraph结束标记
+                mermaid.push_str("        end\n");
+                
+                file_index += 1;
             }
             
-            // 添加subgraph结束标记
+            // 添加目录级subgraph结束标记
             mermaid.push_str("    end\n");
             
-            index += 1;
+            dir_index += 1;
         }
         
         // 添加未包含在任何文件中的节点
