@@ -27,6 +27,10 @@ export class Generator {
     return this.inner.generate_dot_source();
   }
 
+  public generateMermaidSource(): string {
+    return this.inner.generate_mermaid_source();
+  }
+
   public async generateCallGraph(
     files: vscode.Uri[],
     progress: vscode.Progress<{ message?: string; increment?: number }>,

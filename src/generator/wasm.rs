@@ -94,4 +94,8 @@ impl GraphGeneratorWasm {
     pub fn generate_dot_source(&self) -> String {
         self.inner.borrow().generate_dot_source()
     }
+
+    pub fn generate_mermaid_source(&self) -> String {
+        self.inner.borrow().generate_mermaid_source()
+    }
 }

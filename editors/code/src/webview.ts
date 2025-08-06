@@ -41,6 +41,9 @@ export class CallGraphPanel {
 					case 'exportDot':
 						this.saveDot();
 						break;
+					case 'exportMermaid':
+						this.saveMermaid();
+						break;
 					case 'getDotSource':
 						this.handleGetDotSource();
 						break;
@@ -119,6 +122,7 @@ export class CallGraphPanel {
 							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
 							<button id="exportJSON" class="crabviz-button">Export JSON</button>
 							<button id="exportDot" class="crabviz-button">Export DOT</button>
+							<button id="exportMermaid" class="crabviz-button">Export Mermaid</button>
 						</span>
 					</span>
 
@@ -146,6 +150,9 @@ export class CallGraphPanel {
 						document.getElementById('exportDot').addEventListener('click', function() {
 							acquireVsCodeApi().postMessage({ command: 'exportDot' });
 						});
+						document.getElementById('exportMermaid').addEventListener('click', function() {
+							acquireVsCodeApi().postMessage({ command: 'exportMermaid' });
+						});
 					</script>
 			</body>
 			</html>`;
@@ -168,6 +175,11 @@ export class CallGraphPanel {
 	public exportDot(){
 		console.debug("Exporting DOT file");
 		this._panel.webview.postMessage({ command: 'exportDot' });
+	}
+
+	public exportMermaid(){
+		console.debug("Exporting Mermaid file");
+		this._panel.webview.postMessage({ command: 'exportMermaid' });
 	}
 
 	public saveDot() {
@@ -334,6 +346,55 @@ export class CallGraphPanel {
 				}
 			}
 		});
+	}
+
+	public saveMermaid() {
+		console.debug("Exporting Mermaid file");
+		if (!CallGraphPanel._currentGenerator) {
+			vscode.window.showErrorMessage('No call graph generator available');
+			return;
+		}
+		
+		try {
+			const mermaidSource = CallGraphPanel._currentGenerator.generateMermaidSource();
+			
+			// 确定默认保存路径
+			let defaultPath: string | undefined;
+			
+			// 优先使用工作区文件夹
+			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+				defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+			} else {
+				// 否则使用系统临时目录
+				defaultPath = os.tmpdir();
+			}
+			
+			// 创建带时间戳的文件名
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.mmd`);
+
+			vscode.window.showSaveDialog({
+				saveLabel: "export",
+				defaultUri: vscode.Uri.file(defaultFilePath),
+				filters: { 'Mermaid': ['mmd'] },
+			}).then((fileUri) => {
+				if (fileUri) {
+					try {
+						vscode.workspace.fs.writeFile(fileUri, Buffer.from(mermaidSource, 'utf8'))
+							.then(() => {
+								console.log("Mermaid File Saved");
+								vscode.window.showInformationMessage(`Mermaid file saved to ${fileUri.fsPath}`);
+							}, (err: any) => {
+								vscode.window.showErrorMessage(`Error on writing Mermaid file: ${err}`);
+							});
+					} catch (err) {
+						vscode.window.showErrorMessage(`Error on writing Mermaid file: ${err}`);
+					}
+				}
+			});
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to generate Mermaid: ${error}`);
+		}
 	}
 }
 
