@@ -259,16 +259,82 @@ impl GraphGenerator {
             *table = self.lang.file_repr(file);
         });
 
-        // 生成Mermaid格式
-        self.generate_mermaid_from_graph(tables.into_values().collect(), edges.into_iter().collect())
+        // 生成Mermaid格式（使用带subgraph的版本）
+        self.generate_mermaid_from_graph_with_subgraphs(tables.into_values().collect(), edges.into_iter().collect())
     }
 
     fn generate_mermaid_from_graph(&self, tables: Vec<crate::graph::TableNode>, edges: Vec<Edge>) -> String {
         // 生成Mermaid流程图
         let mut mermaid = String::from("flowchart LR\n");
         
-        // 添加节点
+        // 添加所有节点（不使用subgraph）
         for table in &tables {
+            for section in &table.sections {
+                self.add_mermaid_cell(table.id, section, &mut mermaid);
+            }
+        }
+        
+        // 添加边
+        for edge in &edges {
+            let from = format!("{}_{}_{}", edge.from.0, edge.from.1, edge.from.2);
+            let to = format!("{}_{}_{}", edge.to.0, edge.to.1, edge.to.2);
+            mermaid.push_str(&format!("    {} --> {}\n", from, to));
+        }
+        
+        mermaid
+    }
+    
+    fn generate_mermaid_from_graph_with_subgraphs(&self, tables: Vec<crate::graph::TableNode>, edges: Vec<Edge>) -> String {
+        // 生成Mermaid流程图
+        let mut mermaid = String::from("flowchart LR\n");
+        
+        // 创建文件到表格的映射
+        let mut file_tables: HashMap<String, Vec<&crate::graph::TableNode>> = HashMap::new();
+        let mut orphan_tables = Vec::new();
+        
+        // 将表格按文件分组
+        for table in &tables {
+            let file_path = self.files.iter()
+                .find(|(_, file)| file.id == table.id)
+                .map(|(path, _)| path.clone());
+            
+            if let Some(path) = file_path {
+                file_tables.entry(path).or_default().push(table);
+            } else {
+                orphan_tables.push(table);
+            }
+        }
+        
+        // 为每个文件创建一个subgraph
+        let mut index = 0;
+        for (file_path, file_tables) in &file_tables {
+            // 使用相对于项目根目录的路径作为subgraph标题
+            let path = Path::new(file_path);
+            let root_path = Path::new(&self.root);
+            let title = if let Ok(relative) = path.strip_prefix(root_path) {
+                relative.to_string_lossy()
+            } else {
+                path.to_string_lossy()
+            };
+            
+            // 添加subgraph开始标记 - 使用引号包裹标题以处理特殊字符
+            mermaid.push_str(&format!("    subgraph sg{} [\"{}\"]\n", index, title));
+            
+            // 添加当前文件中的所有节点
+            for table in file_tables {
+                for section in &table.sections {
+                    self.add_mermaid_cell(table.id, section, &mut mermaid);
+                }
+            }
+            
+            // 添加subgraph结束标记
+            mermaid.push_str("    end\n");
+            
+            index += 1;
+        }
+        
+        // 添加未包含在任何文件中的节点
+        for table in &orphan_tables {
             for section in &table.sections {
                 self.add_mermaid_cell(table.id, section, &mut mermaid);
             }
@@ -286,14 +352,13 @@ impl GraphGenerator {
     
     fn add_mermaid_cell(&self, table_id: u32, cell: &Cell, mermaid: &mut String) {
         let id = format!("{}_{}_{}", table_id, cell.range_start.0, cell.range_start.1);
-        let label = cell.title.replace('"', "\\\"")
-            .replace('[', "\\[").replace(']', "\\]");
+        let label = cell.title.replace('"', "\\\"").replace('[', "\\[").replace(']', "\\]");
         
         mermaid.push_str(&format!("    {}[\"{}\"]", id, label));
         
         // 添加样式
         if !cell.style.classes.is_empty() {
-            let style_class = cell.style.classes.iter().next().unwrap().to_str();
+            let style_class = format!("{:?}", cell.style.classes.iter().next().unwrap()).to_lowercase();
             mermaid.push_str(&format!(":::{}\n", style_class));
         } else {
             mermaid.push_str("\n");
@@ -304,6 +369,8 @@ impl GraphGenerator {
             self.add_mermaid_cell(table_id, child, mermaid);
         }
     }
+    
+
 
     pub fn generate_dot_source(&self) -> String {
         let files = &self.files;
