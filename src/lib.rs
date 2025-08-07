@@ -4,3 +4,8 @@ mod lang;
 mod lsp_types;
 
 pub use generator::GraphGenerator;
+
+// 当编译目标是wasm32时，使用wee_alloc作为全局分配器
+#[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
