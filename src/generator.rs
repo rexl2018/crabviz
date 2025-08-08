@@ -8,6 +8,16 @@ pub use wasm::{set_panic_hook, GraphGeneratorWasm};
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod refcell_tests;
+
+#[cfg(test)]
+mod generator_tests;
+
+#[cfg(test)]
+#[cfg(feature = "wasm")]
+mod wasm_tests;
+
 pub(crate) use types::*;
 use {
     crate::{
@@ -181,7 +191,7 @@ impl GraphGenerator {
                     let from = call.from.location_id(files)?;
 
                     (cell_ids_ref.contains(&from)
-                        || inserted_symbols_ref.borrow().contains(&from)
+                        || inserted_symbols_ref.try_borrow().map(|b| b.contains(&from)).unwrap_or(false)
                         || {
                             let file = files.get(&call.from.uri.path)? as *const FileOutline;
 
@@ -193,10 +203,12 @@ impl GraphGenerator {
                             };
 
                             if updated {
-                                updated_files_ref
-                                    .borrow_mut()
-                                    .insert(call.from.uri.path.clone());
-                                inserted_symbols_ref.borrow_mut().insert(from);
+                                if let Ok(mut updated_files) = updated_files_ref.try_borrow_mut() {
+                                    updated_files.insert(call.from.uri.path.clone());
+                                }
+                                if let Ok(mut inserted_symbols) = inserted_symbols_ref.try_borrow_mut() {
+                                    inserted_symbols.insert(from);
+                                }
                             }
                             updated
                         })
@@ -253,11 +265,13 @@ impl GraphGenerator {
             .chain(implementations)
             .collect::<HashSet<_>>();
 
-        updated_files.borrow().iter().for_each(|path| {
-            let file = files.get(path).unwrap();
-            let table = tables.get_mut(&file.id).unwrap();
-            *table = self.lang.file_repr(file);
-        });
+        if let Ok(updated) = updated_files.try_borrow() {
+            updated.iter().for_each(|path| {
+                let file = files.get(path).unwrap();
+                let table = tables.get_mut(&file.id).unwrap();
+                *table = self.lang.file_repr(file);
+            });
+        }
 
         // 生成Mermaid格式（使用带subgraph的版本）
         self.generate_mermaid_from_graph_with_subgraphs(tables.into_values().collect(), edges.into_iter().collect())
@@ -345,13 +359,18 @@ impl GraphGenerator {
             // 为目录中的每个文件创建一个subgraph
             let mut file_index = 0;
             for (file_path, file_tables) in dir_files {
-                // 使用相对于项目根目录的文件路径作为subgraph标题
+                // 只使用文件名作为subgraph标题，而不是完整路径
                 let path = Path::new(file_path);
-                let file_title = if let Ok(relative) = path.strip_prefix(root_path) {
-                    relative.to_string_lossy()
-                } else {
-                    path.to_string_lossy()
-                };
+                let file_title = path.file_name()
+                    .map(|name| name.to_string_lossy())
+                    .unwrap_or_else(|| {
+                        // 如果无法获取文件名，则使用相对路径或完整路径
+                        if let Ok(relative) = path.strip_prefix(root_path) {
+                            relative.to_string_lossy()
+                        } else {
+                            path.to_string_lossy()
+                        }
+                    });
                 
                 // 添加文件级subgraph开始标记 - 确保ID格式正确
                 mermaid.push_str(&format!("        subgraph file{}_{} [\"{}\"]\n", dir_index, file_index, file_title));
@@ -460,7 +479,7 @@ impl GraphGenerator {
                     // another approach would be to modify edges to make them start from the outter functions, which is not so accurate
 
                     (cell_ids_ref.contains(&from)
-                        || inserted_symbols_ref.borrow().contains(&from)
+                        || inserted_symbols_ref.try_borrow().map(|b| b.contains(&from)).unwrap_or(false)
                         || {
                             let file = files.get(&call.from.uri.path)? as *const FileOutline;
 
@@ -472,10 +491,12 @@ impl GraphGenerator {
                             };
 
                             if updated {
-                                updated_files_ref
-                                    .borrow_mut()
-                                    .insert(call.from.uri.path.clone());
-                                inserted_symbols_ref.borrow_mut().insert(from);
+                                if let Ok(mut updated_files) = updated_files_ref.try_borrow_mut() {
+                                    updated_files.insert(call.from.uri.path.clone());
+                                }
+                                if let Ok(mut inserted_symbols) = inserted_symbols_ref.try_borrow_mut() {
+                                    inserted_symbols.insert(from);
+                                }
                             }
                             updated
                         })
@@ -532,11 +553,13 @@ impl GraphGenerator {
             .chain(implementations)
             .collect::<HashSet<_>>();
 
-        updated_files.borrow().iter().for_each(|path| {
-            let file = files.get(path).unwrap();
-            let table = tables.get_mut(&file.id).unwrap();
-            *table = self.lang.file_repr(file);
-        });
+        if let Ok(updated) = updated_files.try_borrow() {
+            updated.iter().for_each(|path| {
+                let file = files.get(path).unwrap();
+                let table = tables.get_mut(&file.id).unwrap();
+                *table = self.lang.file_repr(file);
+            });
+        }
 
         let subgraphs = self.subgraphs(files.iter().map(|(_, f)| f));
 

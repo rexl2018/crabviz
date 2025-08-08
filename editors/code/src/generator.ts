@@ -16,10 +16,19 @@ const isWindows = process.platform === 'win32';
 export class Generator {
   private root: string;
   private inner: GraphGenerator;
+  private lang: string;
 
   public constructor(root: vscode.Uri, lang: string) {
     this.root = normalizedPath(root.path);
+    this.lang = lang;
     this.inner = new GraphGenerator(this.root, lang);
+  }
+  
+  /**
+   * 获取当前使用的语言
+   */
+  public getLanguage(): string {
+    return this.lang;
   }
 
   // Public method to access DOT source
@@ -43,7 +52,9 @@ export class Generator {
     let finishedCount = 0;
     progress.report({ message: `${finishedCount} / ${files.length}` });
 
-    for await (const file of files) {
+    // 改为普通for循环，避免并发借用问题
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       if (token.isCancellationRequested) {
         return "";
       }
@@ -64,7 +75,9 @@ export class Generator {
       }
 
       while (symbols.length > 0) {
-        for await (const symbol of symbols) {
+        // 改为普通for循环，避免并发借用问题
+        for (let j = 0; j < symbols.length; j++) {
+          const symbol = symbols[j];
           if (token.isCancellationRequested) {
             return "";
           }
@@ -80,7 +93,9 @@ export class Generator {
               continue;
             }
 
-            for await (const item of items) {
+            // 改为普通for循环，避免并发借用问题
+            for (let k = 0; k < items.length; k++) {
+              const item = items[k];
               await this.resolveCallsInFiles(item, funcMap);
             }
           } else if (symbol.kind === vscode.SymbolKind.Interface) {
@@ -139,14 +154,19 @@ export class Generator {
       return null;
     }
 
-    for await (const item of items) {
+    // 串行处理items，避免并发借用问题
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       files.set(normalizedPath(item.uri.path), new VisitedFile(item.uri));
 
       await this.resolveIncomingCalls(item, files, ig);
       await this.resolveOutgoingCalls(item, files, ig);
     }
 
-    for await (const file of files.values()) {
+    // 串行处理files，避免并发借用问题
+    const fileValues = Array.from(files.values());
+    for (let i = 0; i < fileValues.length; i++) {
+      const file = fileValues[i];
       if (file.skip) { continue; }
 
       let symbols = await retryCommand<vscode.DocumentSymbol[]>(5, 600, 'vscode.executeDocumentSymbolProvider', file.uri);
@@ -161,7 +181,9 @@ export class Generator {
       this.inner.add_file(normalizedPath(file.uri.path), symbols);
     }
 
-    for await (const item of items) {
+    // 串行处理highlight，避免并发借用问题
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       this.inner.highlight(normalizedPath(item.uri.path), item.selectionRange.start);
     }
 
@@ -213,8 +235,9 @@ export class Generator {
             return funcs !== undefined && !funcs.has(keyFromPosition(call.from.selectionRange.start));
           });
 
-        for await (const call of calls) {
-          await this.resolveCallsInFiles(call.from, funcMap);
+        // 改为普通for循环，避免并发借用问题
+        for (let i = 0; i < calls.length; i++) {
+          await this.resolveCallsInFiles(calls[i].from, funcMap);
         }
       })
       .then(undefined, err => {
@@ -247,7 +270,8 @@ export class Generator {
             return !file.skip && !file.hasVisitedFunc(call.from.selectionRange.start, FuncCallDirection.INCOMING);
           });
 
-        for await (const call of calls) {
+        // 串行处理递归调用，避免并发借用问题
+        for (const call of calls) {
           await this.resolveIncomingCalls(call.from, funcMap, ig);
         }
       })
@@ -285,8 +309,9 @@ export class Generator {
             return !file.skip && !file.hasVisitedFunc(call.to.selectionRange.start, FuncCallDirection.OUTGOING);
           });
 
-        for await (const call of calls) {
-          await this.resolveOutgoingCalls(call.to, funcMap, ig);
+        // 改为普通for循环，避免并发借用问题
+        for (let i = 0; i < calls.length; i++) {
+          await this.resolveOutgoingCalls(calls[i].to, funcMap, ig);
         }
       })
       .then(undefined, err => {

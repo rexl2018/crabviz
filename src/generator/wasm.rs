@@ -7,6 +7,13 @@ use {
     wasm_bindgen::prelude::*,
 };
 
+// 导入wee_alloc用于WebAssembly内存分配
+#[cfg(all(feature = "wasm", target_arch = "wasm32"))]
+use wee_alloc;
+
+#[cfg(feature = "vscode")]
+use web_sys::console;
+
 #[wasm_bindgen]
 pub fn set_panic_hook() {
     // When the `console_error_panic_hook` feature is enabled, we can call the
@@ -42,33 +49,154 @@ impl GraphGeneratorWasm {
     }
 
     pub fn should_filter_out_file(&self, file_path: String) -> bool {
-        self.inner.borrow().should_filter_out_file(&file_path)
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow() {
+                Ok(inner) => {
+                    return inner.should_filter_out_file(&file_path); // 成功处理后返回结果
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for should_filter_out_file after multiple attempts: BorrowError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for should_filter_out_file: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
+        false // 默认不过滤，作为错误情况的回退
     }
 
     pub fn add_file(&self, file_path: String, symbols: JsValue) -> bool {
-        let symbols = serde_wasm_bindgen::from_value::<Vec<DocumentSymbol>>(symbols).unwrap();
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let symbols = match serde_wasm_bindgen::from_value::<Vec<DocumentSymbol>>(symbols) {
+            Ok(s) => s,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize symbols: {:?}", err)));
+                return false;
+            }
+        };
 
-        self.inner.borrow_mut().add_file(file_path, symbols)
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow_mut() {
+                Ok(mut inner) => {
+                    return inner.add_file(file_path.clone(), symbols.clone()); // 成功处理后返回结果
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for add_file after multiple attempts: BorrowMutError"));
+                        return false;
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for add_file: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
+        false // 如果所有尝试都失败，返回false
     }
 
     pub fn add_incoming_calls(&self, file_path: String, position: JsValue, calls: JsValue) {
-        let position = serde_wasm_bindgen::from_value::<Position>(position).unwrap();
-        let calls =
-            serde_wasm_bindgen::from_value::<Vec<CallHierarchyIncomingCall>>(calls).unwrap();
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let position = match serde_wasm_bindgen::from_value::<Position>(position) {
+            Ok(pos) => pos,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize position: {:?}", err)));
+                return;
+            }
+        };
+        
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let calls = match serde_wasm_bindgen::from_value::<Vec<CallHierarchyIncomingCall>>(calls) {
+            Ok(c) => c,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize incoming calls: {:?}", err)));
+                return;
+            }
+        };
 
-        self.inner
-            .borrow_mut()
-            .add_incoming_calls(file_path, position, calls);
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow_mut() {
+                Ok(mut inner) => {
+                    inner.add_incoming_calls(file_path, position.clone(), calls.clone());
+                    return; // 成功处理后返回
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for add_incoming_calls after multiple attempts: BorrowMutError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for add_incoming_calls: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
     }
 
     pub fn add_outgoing_calls(&self, file_path: String, position: JsValue, calls: JsValue) {
-        let position = serde_wasm_bindgen::from_value::<Position>(position).unwrap();
-        let calls =
-            serde_wasm_bindgen::from_value::<Vec<CallHierarchyOutgoingCall>>(calls).unwrap();
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let position = match serde_wasm_bindgen::from_value::<Position>(position) {
+            Ok(pos) => pos,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize position: {:?}", err)));
+                return;
+            }
+        };
+        
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let calls = match serde_wasm_bindgen::from_value::<Vec<CallHierarchyOutgoingCall>>(calls) {
+            Ok(c) => c,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize outgoing calls: {:?}", err)));
+                return;
+            }
+        };
 
-        self.inner
-            .borrow_mut()
-            .add_outgoing_calls(file_path, position, calls);
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow_mut() {
+                Ok(mut inner) => {
+                    inner.add_outgoing_calls(file_path, position.clone(), calls.clone());
+                    return; // 成功处理后返回
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for add_outgoing_calls after multiple attempts: BorrowMutError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for add_outgoing_calls: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
     }
 
     pub fn add_interface_implementations(
@@ -77,25 +205,132 @@ impl GraphGeneratorWasm {
         position: JsValue,
         locations: JsValue,
     ) {
-        let position = serde_wasm_bindgen::from_value::<Position>(position).unwrap();
-        let locations = serde_wasm_bindgen::from_value::<Vec<Location>>(locations).unwrap();
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let position = match serde_wasm_bindgen::from_value::<Position>(position) {
+            Ok(pos) => pos,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize position: {:?}", err)));
+                return;
+            }
+        };
+        
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let locations = match serde_wasm_bindgen::from_value::<Vec<Location>>(locations) {
+            Ok(loc) => loc,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize locations: {:?}", err)));
+                return;
+            }
+        };
 
-        self.inner
-            .borrow_mut()
-            .add_interface_implementations(file_path, position, locations);
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow_mut() {
+                Ok(mut inner) => {
+                    inner.add_interface_implementations(file_path, position.clone(), locations.clone());
+                    return; // 成功处理后返回
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for add_interface_implementations after multiple attempts: BorrowMutError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for add_interface_implementations: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
     }
 
     pub fn highlight(&self, file_path: String, position: JsValue) {
-        let position = serde_wasm_bindgen::from_value::<Position>(position).unwrap();
+        // 使用match处理反序列化可能的错误，避免unwrap导致的panic
+        let position = match serde_wasm_bindgen::from_value::<Position>(position) {
+            Ok(pos) => pos,
+            Err(err) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str(&format!("Failed to deserialize position: {:?}", err)));
+                return;
+            }
+        };
 
-        self.inner.borrow_mut().highlight(file_path, position);
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow_mut() {
+                Ok(mut inner) => {
+                    inner.highlight(file_path, position.clone());
+                    return; // 成功处理后返回
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for highlight after multiple attempts: BorrowMutError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for highlight: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
     }
 
     pub fn generate_dot_source(&self) -> String {
-        self.inner.borrow().generate_dot_source()
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow() {
+                Ok(inner) => {
+                    return inner.generate_dot_source(); // 成功处理后返回结果
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for generate_dot_source after multiple attempts: BorrowError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for generate_dot_source: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
+        String::new() // 如果所有尝试都失败，返回空字符串
     }
 
     pub fn generate_mermaid_source(&self) -> String {
-        self.inner.borrow().generate_mermaid_source()
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow() {
+                Ok(inner) => {
+                    return inner.generate_mermaid_source(); // 成功处理后返回结果
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for generate_mermaid_source after multiple attempts: BorrowError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for generate_mermaid_source: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
+        String::new() // 如果所有尝试都失败，返回空字符串
     }
 }

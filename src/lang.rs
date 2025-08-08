@@ -10,7 +10,7 @@ use {
     },
 };
 
-pub(crate) trait Language {
+pub(crate) trait Language: Send + Sync {
     fn should_filter_out_file(&self, _file: &str) -> bool {
         false
     }
