@@ -17,6 +17,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.commands.registerCommand('crabviz.generateCallGraph', manager.generateCallGraph.bind(manager)),
 		vscode.commands.registerTextEditorCommand('crabviz.generateFuncCallGraph', manager.generateFuncCallGraph.bind(manager)),
+		// 注册自定义调用图命令
+		vscode.commands.registerCommand('crabviz.customCallGraphAdd', manager.customCallGraphAdd.bind(manager)),
+		vscode.commands.registerCommand('crabviz.customCallGraphList', manager.customCallGraphList.bind(manager)),
+		vscode.commands.registerCommand('crabviz.customCallGraphDelete', manager.customCallGraphDelete.bind(manager)),
+		vscode.commands.registerCommand('crabviz.customCallGraphGenerate', manager.customCallGraphGenerate.bind(manager)),
+		// 导出命令
 		vscode.commands.registerCommand('crabviz.exportCallGraph', () => {
 			CallGraphPanel.currentPanel?.exportSVG();
 		}),

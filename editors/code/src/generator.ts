@@ -16,10 +16,19 @@ const isWindows = process.platform === 'win32';
 export class Generator {
   private root: string;
   private inner: GraphGenerator;
+  private lang: string;
 
   public constructor(root: vscode.Uri, lang: string) {
     this.root = normalizedPath(root.path);
+    this.lang = lang;
     this.inner = new GraphGenerator(this.root, lang);
+  }
+  
+  /**
+   * 获取当前使用的语言
+   */
+  public getLanguage(): string {
+    return this.lang;
   }
 
   // Public method to access DOT source

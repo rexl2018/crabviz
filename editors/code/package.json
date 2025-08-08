@@ -24,6 +24,12 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "submenus": [
+      {
+        "id": "crabviz.customCallGraphSubmenu",
+        "label": "Custom Call Graph"
+      }
+    ],
     "commands": [
       {
         "command": "crabviz.generateCallGraph",
@@ -32,6 +38,22 @@
       {
         "command": "crabviz.generateFuncCallGraph",
         "title": "Crabviz: Generate Function Call Graph"
+      },
+      {
+        "command": "crabviz.customCallGraphAdd",
+        "title": "Crabviz: Add to Custom Call Graph"
+      },
+      {
+        "command": "crabviz.customCallGraphList",
+        "title": "Crabviz: List Custom Call Graph Items"
+      },
+      {
+        "command": "crabviz.customCallGraphDelete",
+        "title": "Crabviz: Delete from Custom Call Graph"
+      },
+      {
+        "command": "crabviz.customCallGraphGenerate",
+        "title": "Crabviz: Generate Custom Call Graph"
       },
       {
         "command": "crabviz.exportCallGraph",
@@ -65,6 +87,10 @@
           "when": "never"
         },
         {
+          "command": "crabviz.customCallGraphAdd",
+          "when": "never"
+        },
+        {
           "command": "crabviz.exportCallGraph",
           "when": "never"
         },
@@ -90,12 +116,39 @@
           "command": "crabviz.generateFuncCallGraph",
           "group": "crabviz",
           "when": "editorHasCallHierarchyProvider"
+        },
+        {
+          "submenu": "crabviz.customCallGraphSubmenu",
+          "group": "crabviz",
+          "when": "editorHasCallHierarchyProvider"
         }
       ],
       "explorer/context": [
         {
           "command": "crabviz.generateCallGraph",
           "group": "crabviz"
+        },
+        {
+          "submenu": "crabviz.customCallGraphSubmenu",
+          "group": "crabviz"
+        }
+      ],
+      "crabviz.customCallGraphSubmenu": [
+        {
+          "command": "crabviz.customCallGraphAdd",
+          "group": "1_add"
+        },
+        {
+          "command": "crabviz.customCallGraphList",
+          "group": "2_view"
+        },
+        {
+          "command": "crabviz.customCallGraphDelete",
+          "group": "2_view"
+        },
+        {
+          "command": "crabviz.customCallGraphGenerate",
+          "group": "3_generate"
         }
       ],
       "webview/context": [
