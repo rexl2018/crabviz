@@ -592,22 +592,51 @@ export class CallGraphPanel {
 						}
 					});
 					
-					// Post-process SVG to add data attributes for edges
-						function addEdgeDataAttributes(svg) {
-							console.log('[SVG Post-processing] Adding edge data attributes');
-							const edges = svg.querySelectorAll('g.edge');
-							console.log('[SVG Post-processing] Found edges:', edges.length);
+					// Post-process SVG to add data attributes for edges and nodes
+					function addDataAttributes(svg) {
+						console.log('[SVG Post-processing] Adding data attributes');
+						
+						// Process edges
+						const edges = svg.querySelectorAll('g.edge');
+						console.log('[SVG Post-processing] Found edges:', edges.length);
+						
+						edges.forEach(edge => {
+							const id = edge.id;
+							if (id && id.includes(' -> ')) {
+								const [from, to] = id.split(' -> ');
+								edge.setAttribute('data-from', from);
+								edge.setAttribute('data-to', to);
+								console.log('[SVG Post-processing] Added attributes to edge:', { id, from, to });
+							}
+						});
+						
+						// Process nodes - convert HREF to data-path
+						const links = svg.querySelectorAll('a');
+						console.log('[SVG Post-processing] Found links:', links.length);
+						
+						links.forEach(a => {
+							const href = a.href.baseVal;
+							const g = a.parentNode;
 							
-							edges.forEach(edge => {
-								const id = edge.id;
-								if (id && id.includes(' -> ')) {
-									const [from, to] = id.split(' -> ');
-									edge.setAttribute('data-from', from);
-									edge.setAttribute('data-to', to);
-									console.log('[SVG Post-processing] Added attributes to edge:', { id, from, to });
+							// Replace the <a> element with its children
+							a.replaceWith(...a.childNodes);
+							g.id = g.id.replace(/^a_/, '');
+							
+							// Check if href is a file path (not a symbol kind number)
+							const kind = parseInt(href);
+							if (isNaN(kind) && href !== 'remove_me_url.title') {
+								g.classList.add('title');
+								const node = g.closest('.node');
+								if (node) {
+									node.setAttribute('data-path', href);
+									console.log('[SVG Post-processing] Added data-path to node:', { nodeId: node.id, path: href });
 								}
-							});
-						}
+							} else if (!isNaN(kind)) {
+								g.setAttribute('data-kind', kind.toString());
+								g.classList.add('cell');
+							}
+						});
+					}
 						
 						// Graph interaction logic from crabviz-ref
 						class CallGraphInteraction {
@@ -1078,8 +1107,8 @@ export class CallGraphPanel {
 						if (svgElement) {
 							svgElement.classList.add('callgraph');
 							
-							// Add data attributes to edges for interaction
-							addEdgeDataAttributes(svgElement);
+							// Add data attributes to edges and nodes for interaction
+						addDataAttributes(svgElement);
 							
 							const interaction = new CallGraphInteraction(svgElement);
 						

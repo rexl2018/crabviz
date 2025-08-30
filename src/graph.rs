@@ -46,6 +46,7 @@ pub struct Cell {
     pub range_end: (u32, u32),
     pub title: String,
     pub style: Style,
+    pub symbol_kind: Option<crate::lsp_types::SymbolKind>,
     pub children: Vec<Cell>,
 }
 
@@ -62,6 +63,7 @@ impl Cell {
 pub struct TableNode {
     pub id: u32,
     pub title: String,
+    pub path: Option<String>,
     pub sections: Vec<Cell>,
 }
 

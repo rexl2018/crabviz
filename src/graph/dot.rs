@@ -70,13 +70,14 @@ impl Dot {
                     r#"
     "{id}" [id="{id}", label=<
         <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="8" CELLPADDING="4">
-        <TR><TD WIDTH="230" BORDER="0" CELLPADDING="6" HREF="remove_me_url.title">{title}</TD></TR>
+        <TR><TD WIDTH="230" BORDER="0" CELLPADDING="6" HREF="{path}">{title}</TD></TR>
         {sections}
         <TR><TD CELLSPACING="0" HEIGHT="1" WIDTH="1" FIXEDSIZE="TRUE" STYLE="invis"></TD></TR>
         </TABLE>
     >];
                     "#,
                     id = table.id,
+                    path = table.path.as_deref().unwrap_or("remove_me_url.title"),
                     title = table.title,
                     sections = table
                         .sections
@@ -151,36 +152,56 @@ digraph {{
         let port = format!("{}_{}", cell.range_start.0, cell.range_start.1);
 
         if cell.children.is_empty() {
+            let href = if let Some(kind) = cell.symbol_kind {
+                format!(r#"href="{}""#, kind as u8)
+            } else {
+                Dot::css_classes_href(cell.style.classes)
+            };
             format!(
                 r#"     <TR><TD PORT="{port}" ID="{table_id}:{port}" {styles} {href}>{title}</TD></TR>"#,
-                href = Dot::css_classes_href(cell.style.classes),
+                port = port,
+                table_id = table_id,
+                styles = styles,
+                href = href,
+                title = title
             )
         } else {
             let (cell_styles, table_styles) = (r#"BORDER="0""#.to_string(), styles);
 
             let dot_cell = format!(
-                r#"     <TR><TD PORT="{port}" {cell_styles} {href}>{title}</TD></TR>"#,
-                href = EMPTY_STRING,
+                r#"     <TR><TD PORT="{port}" {cell_styles}>{title}</TD></TR>"#,
+                port = port,
+                cell_styles = cell_styles,
+                title = title
             );
+
+            let href = if let Some(kind) = cell.symbol_kind {
+                format!(r#"href="{}""#, kind as u8)
+            } else {
+                Dot::css_classes_href(cell.style.classes)
+            };
 
             format!(
                 r#"
             <TR><TD BORDER="0" CELLPADDING="0">
-            <TABLE ID="{table_id}:{port}" CELLSPACING="8" CELLPADDING="4" CELLBORDER="1" {table_styles} BGCOLOR="{}" {href}>
-            {}
+            <TABLE ID="{table_id}:{port}" CELLSPACING="8" CELLPADDING="4" CELLBORDER="1" {table_styles} BGCOLOR="{bg_color}" {href}>
+            {content}
             </TABLE>
             </TD></TR>
             "#,
-                FUNCTION_BG_COLOR,
-                iter::once(dot_cell)
-                    .chain(
-                        cell.children
-                            .iter()
-                            .map(|item| Dot::process_cell(table_id, item))
-                    )
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-                href = Dot::css_classes_href(cell.style.classes),
+                table_id = table_id,
+                port = port,
+                table_styles = table_styles,
+                bg_color = FUNCTION_BG_COLOR,
+                href = href,
+                content = iter::once(dot_cell)
+                     .chain(
+                         cell.children
+                             .iter()
+                             .map(|item| Dot::process_cell(table_id, item))
+                     )
+                     .collect::<Vec<_>>()
+                     .join("\n"),
             )
         }
     }
