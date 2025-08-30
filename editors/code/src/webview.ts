@@ -735,6 +735,48 @@ export class CallGraphPanel {
 								}
 								onSelectElem(null);
 							};
+							
+							// Add double-click event listener for goto definition
+							svg.ondblclick = function (e) {
+								for (
+									let elem = e.target;
+									elem && elem instanceof SVGElement && elem !== svg;
+									elem = elem.parentNode
+								) {
+									const classes = elem.classList;
+									
+									// Handle file title double-click
+									if (classes.contains('node') && elem.dataset.path) {
+										vscode.postMessage({
+											command: 'gotoDefinition',
+											filePath: elem.dataset.path,
+											line: 0,
+											character: 0
+										});
+										return;
+									}
+									
+									// Handle symbol cell double-click
+									if (classes.contains('cell') && elem.dataset.kind) {
+										const nodeElem = elem.closest('.node');
+										if (nodeElem && nodeElem.dataset.path) {
+											// Parse the cell ID to get line and character
+											const cellId = elem.id;
+											const parts = cellId.split(':');
+											if (parts.length >= 2) {
+												const [line, character] = parts[1].split('_').map(s => parseInt(s) || 0);
+												vscode.postMessage({
+													command: 'gotoDefinition',
+													filePath: nodeElem.dataset.path,
+													line: line,
+													character: character
+												});
+											}
+										}
+										return;
+									}
+								}
+							};
 						}
 						
 						setupPanZoom() {
