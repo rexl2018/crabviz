@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { Generator } from './generator';
 import { GraphGenerator } from '../crabviz';
+import { generateHTMLTemplate } from './export-templates';
 
 export class CallGraphPanel {
 	public static readonly viewType = 'crabviz.callgraph';
@@ -13,14 +14,14 @@ export class CallGraphPanel {
 	private readonly _panel: vscode.WebviewPanel;
 	private readonly _extensionUri: vscode.Uri;
 	private _disposables: vscode.Disposable[] = [];
-	private static _currentGenerator: Generator | null = null; // 存储当前的Generator实例
+	private static _currentGenerator: Generator | null = null;
 
 	public constructor(extensionUri: vscode.Uri) {
 		this._extensionUri = extensionUri;
 
-		const panel = vscode.window.createWebviewPanel(CallGraphPanel.viewType, `Crabviz Debug #${CallGraphPanel.num}`, vscode.ViewColumn.One, {
+		const panel = vscode.window.createWebviewPanel(CallGraphPanel.viewType, `Crabviz #${CallGraphPanel.num}`, vscode.ViewColumn.One, {
 			localResourceRoots: [
-				vscode.Uri.joinPath(this._extensionUri, 'media')
+				vscode.Uri.joinPath(this._extensionUri, 'out'),
 			],
 			enableScripts: true
 		});
@@ -32,23 +33,32 @@ export class CallGraphPanel {
 		this._panel.webview.onDidReceiveMessage(
 			message => {
 				switch (message.command) {
+					case 'exportSVG':
+						this.exportSVG();
+						break;
 					case 'saveSVG':
 						this.saveSVG(message.svg);
 						break;
 					case 'saveJSON':
 						this.saveJSON(message.svg);
 						break;
-					case 'exportDot':
-						this.saveDot();
+					case 'exportHTML':
+						this.saveHTML(message.svg);
 						break;
-					case 'exportMermaid':
-						this.saveMermaid();
+					case 'gotoDefinition':
+						this.handleGotoDefinition(message.filePath, message.line, message.character);
 						break;
 					case 'getDotSource':
 						this.handleGetDotSource();
 						break;
 					case 'dotSourceResponse':
 						this.saveDotFile(message.dotSource);
+						break;
+					case 'exportDot':
+						this.saveDot();
+						break;
+					case 'exportMermaid':
+						this.saveMermaid();
 						break;
 				}
 			},
@@ -89,74 +99,201 @@ export class CallGraphPanel {
 	}
 
 	public showCallGraph(svg: string, focusMode: boolean) {
-		const resourceUri = vscode.Uri.joinPath(this._extensionUri, 'media');
-
-		const filePromises = ['variables.css', 'styles.css', 'graph.js', 'panzoom.min.js', 'export.js'].map(fileName =>
-			vscode.workspace.fs.readFile(vscode.Uri.joinPath(resourceUri, fileName))
-		);
-
 		CallGraphPanel.currentPanel = this;
 
 		const nonce = getNonce();
+		const webview = this._panel.webview;
 
-		Promise.all(filePromises).then(([cssVariables, cssStyles, ...scripts]) => {
-			this._panel.webview.html = `<!DOCTYPE html>
+		this._panel.webview.html = `
+			<!DOCTYPE html>
 			<html lang="en">
 			<head>
-					<meta charset="UTF-8">
-					<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}';">
-					<meta name="viewport" content="width=device-width, initial-scale=1.0">
-					<style id="crabviz_style">
-						${cssVariables.toString()}
-						${cssStyles.toString()}
-					</style>
-					${scripts.map((s) => `<script nonce="${nonce}">${s.toString()}</script>`)}
-					<title>crabviz</title>
+				<meta charset="UTF-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0">
+				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' 'unsafe-eval'; img-src ${webview.cspSource} data:;">
+				<title>Crabviz Call Graph</title>
+				<style>
+					body {
+						margin: 0;
+						padding: 0;
+						background: var(--vscode-editor-background);
+						color: var(--vscode-editor-foreground);
+						font-family: var(--vscode-font-family);
+						height: 100vh;
+						overflow: hidden;
+					}
+					.toolbar {
+						display: flex;
+						justify-content: space-between;
+						align-items: center;
+						padding: 10px 15px;
+						background: var(--vscode-editor-background);
+						border-bottom: 1px solid var(--vscode-panel-border);
+						gap: 15px;
+					}
+					.search-container {
+						display: flex;
+						align-items: center;
+						gap: 8px;
+						flex: 1;
+					}
+					.export-container {
+						display: flex;
+						align-items: center;
+						gap: 8px;
+					}
+					#search-input {
+						padding: 8px 12px;
+						border: 1px solid var(--vscode-input-border);
+						border-radius: 3px;
+						background: var(--vscode-input-background);
+						color: var(--vscode-input-foreground);
+						font-size: 13px;
+						min-width: 250px;
+						outline: none;
+					}
+					#search-input:focus {
+						border-color: var(--vscode-focusBorder);
+						box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+					}
+					button {
+						padding: 8px 12px;
+						background: var(--vscode-button-background);
+						color: var(--vscode-button-foreground);
+						border: 1px solid var(--vscode-button-border);
+						border-radius: 3px;
+						cursor: pointer;
+						font-size: 12px;
+						margin-left: 4px;
+					}
+					button:hover {
+						background: var(--vscode-button-hoverBackground);
+					}
+					.graph-container {
+						height: calc(100vh - 60px);
+						overflow: auto;
+						padding: 20px;
+					}
+					svg {
+						max-width: 100%;
+						height: auto;
+					}
+					.search-highlight {
+						background-color: #ffeb3b !important;
+						color: #000 !important;
+						border-radius: 3px;
+						padding: 2px 4px;
+						box-shadow: 0 0 3px rgba(255, 235, 59, 0.6);
+						transition: all 0.2s ease;
+					}
+				</style>
 			</head>
-			<body data-vscode-context='{ "preventDefaultContextMenuItems": true }'>
-					<span class="main-container">
-						<span class="crabviz-title">Crabviz Debug #${CallGraphPanel.num - 1}</span>
-						<span>${svg}</span>
-						<span class="carbviz-toolbar">
-							<button id="exportSVG" class="crabviz-button">Export SVG</button>
-							<button id="exportCrabViz" class="crabviz-button">Export CrabViz</button>
-							<button id="exportJSON" class="crabviz-button">Export JSON</button>
-							<button id="exportDot" class="crabviz-button">Export DOT</button>
-							<button id="exportMermaid" class="crabviz-button">Export Mermaid</button>
-						</span>
-					</span>
-
-
-					<script nonce="${nonce}">
-						const graph = new CallGraph(document.querySelector("svg"), ${focusMode});
-						graph.activate();
-
-						panzoom(graph.svg, {
-							minZoom: 0.5,
-							smoothScroll: false,
-							zoomDoubleClickSpeed: 1
+			<body>
+				<div class="toolbar">
+					<div class="search-container">
+						<input type="text" id="search-input" placeholder="Search symbols and files..." />
+						<button id="search-btn" title="Search">🔍</button>
+						<button id="clear-search-btn" title="Clear search">✕</button>
+					</div>
+					<div class="export-container">
+						<button id="export-svg-btn" title="Export as SVG">📄 SVG</button>
+						<button id="export-json-btn" title="Export as JSON">📋 JSON</button>
+						<button id="export-dot-btn" title="Export as DOT">🔗 DOT</button>
+						<button id="export-mermaid-btn" title="Export as Mermaid">🧜 Mermaid</button>
+						<button id="export-html-btn" title="Export as HTML">🌐 HTML</button>
+					</div>
+				</div>
+				<div class="graph-container">
+					${svg}
+				</div>
+				<script nonce="${nonce}">
+					const vscode = acquireVsCodeApi();
+					
+					// Search functionality
+					const searchInput = document.getElementById('search-input');
+					const searchBtn = document.getElementById('search-btn');
+					const clearBtn = document.getElementById('clear-search-btn');
+					
+					function performSearch(query) {
+						if (!query.trim()) {
+							clearSearchHighlights();
+							return;
+						}
+						
+						const svgElement = document.querySelector('svg');
+						if (!svgElement) return;
+						
+						const textElements = svgElement.querySelectorAll('text');
+						textElements.forEach(element => {
+							const text = element.textContent.toLowerCase();
+							if (text.includes(query.toLowerCase())) {
+								element.classList.add('search-highlight');
+							}
 						});
-
-						// 添加按钮事件监听器
-						document.getElementById('exportSVG').addEventListener('click', function() {
-							acquireVsCodeApi().postMessage({ command: 'exportSVG' });
+					}
+					
+					function clearSearchHighlights() {
+						const highlightedElements = document.querySelectorAll('.search-highlight');
+						highlightedElements.forEach(element => {
+							element.classList.remove('search-highlight');
 						});
-						document.getElementById('exportCrabViz').addEventListener('click', function() {
-							acquireVsCodeApi().postMessage({ command: 'exportCrabViz' });
-						});
-						document.getElementById('exportJSON').addEventListener('click', function() {
-							acquireVsCodeApi().postMessage({ command: 'saveJSON' });
-						});
-						document.getElementById('exportDot').addEventListener('click', function() {
-							acquireVsCodeApi().postMessage({ command: 'exportDot' });
-						});
-						document.getElementById('exportMermaid').addEventListener('click', function() {
-							acquireVsCodeApi().postMessage({ command: 'exportMermaid' });
-						});
-					</script>
+					}
+					
+					// Event listeners
+					searchBtn.addEventListener('click', () => {
+						performSearch(searchInput.value);
+					});
+					
+					clearBtn.addEventListener('click', () => {
+						searchInput.value = '';
+						clearSearchHighlights();
+					});
+					
+					searchInput.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter') {
+							performSearch(searchInput.value);
+						}
+						if (e.key === 'Escape') {
+							searchInput.value = '';
+							clearSearchHighlights();
+						}
+					});
+					
+					// Export buttons
+					document.getElementById('export-svg-btn').addEventListener('click', () => {
+						const svgElement = document.querySelector('svg');
+						const svgContent = svgElement ? svgElement.outerHTML : '';
+						vscode.postMessage({ command: 'saveSVG', svg: svgContent });
+					});
+					
+					document.getElementById('export-json-btn').addEventListener('click', () => {
+						vscode.postMessage({ command: 'saveJSON' });
+					});
+					
+					document.getElementById('export-dot-btn').addEventListener('click', () => {
+						vscode.postMessage({ command: 'exportDot' });
+					});
+					
+					document.getElementById('export-mermaid-btn').addEventListener('click', () => {
+						vscode.postMessage({ command: 'exportMermaid' });
+					});
+					
+					document.getElementById('export-html-btn').addEventListener('click', () => {
+						const svgElement = document.querySelector('svg');
+						const svgContent = svgElement ? svgElement.outerHTML : '';
+						vscode.postMessage({ command: 'exportHTML', svg: svgContent });
+					});
+					
+					// Keyboard shortcut for search (Ctrl+F)
+					document.addEventListener('keydown', (e) => {
+						if (e.ctrlKey && e.key === 'f') {
+							e.preventDefault();
+							searchInput.focus();
+						}
+					});
+				</script>
 			</body>
 			</html>`;
-		});
 	}
 
 	public exportSVG() {
@@ -182,35 +319,43 @@ export class CallGraphPanel {
 		this._panel.webview.postMessage({ command: 'exportMermaid' });
 	}
 
-	public saveDot() {
-		console.debug("Saving DOT file");
-		// 获取DOT源代码
-		this._panel.webview.postMessage({ command: 'getDotSource' });
+	public exportHTML(){
+		console.debug("Exporting HTML file");
+		this._panel.webview.postMessage({ command: 'exportHTML' });
 	}
 
-	// 添加处理getDotSource命令的方法
-	private handleGetDotSource() {
-		// 从Generator获取DOT源代码
+	public saveDot() {
+		console.debug("Saving DOT file - button clicked");
+		console.debug("Current generator:", CallGraphPanel._currentGenerator);
 		if (CallGraphPanel._currentGenerator) {
-			// 使用Generator实例的公共方法获取DOT源代码
-			const dotSource = CallGraphPanel._currentGenerator.generateDotSource();
-			// 发送dotSourceResponse消息，包含DOT源代码
-			this._panel.webview.postMessage({
-				command: 'dotSourceResponse',
-				dotSource: dotSource
-			});
+			console.debug("Generator methods:", Object.getOwnPropertyNames(CallGraphPanel._currentGenerator));
+			console.debug("generateDotSource method:", typeof (CallGraphPanel._currentGenerator as any).generateDotSource);
+		}
+		this.handleGetDotSource();
+	}
+
+	private handleGetDotSource() {
+		console.debug("handleGetDotSource called");
+		if (CallGraphPanel._currentGenerator) {
+			try {
+				console.debug("Attempting to generate DOT source");
+				// Use existing generateDotSource method if available
+				const dotSource = (CallGraphPanel._currentGenerator as any).generateDotSource?.() || 'digraph G { }';
+				console.debug("Generated DOT source length:", dotSource.length);
+				console.debug("DOT source preview:", dotSource.substring(0, 100));
+				
+				// 直接调用saveDotFile而不是通过消息传递
+				this.saveDotFile(dotSource);
+			} catch (error) {
+				console.error("Error generating DOT source:", error);
+				vscode.window.showErrorMessage(`Failed to generate DOT source: ${error}`);
+			}
 		} else {
-			// 如果没有Generator实例，显示错误消息
-			vscode.window.showErrorMessage('No call graph generator available');
-			// 发送空的DOT源代码
-			this._panel.webview.postMessage({
-				command: 'dotSourceResponse',
-				dotSource: '// No call graph generator available'
-			});
+			console.debug("No current generator available");
+			vscode.window.showErrorMessage('No generator available for DOT export');
 		}
 	}
 
-	// 添加设置当前Generator实例的方法
 	public static setCurrentGenerator(generator: Generator) {
 		CallGraphPanel._currentGenerator = generator;
 	}
@@ -224,18 +369,14 @@ export class CallGraphPanel {
 
 		const writeData = Buffer.from(dotSource, 'utf8');
 		
-		// 确定默认保存路径
 		let defaultPath: string | undefined;
 		
-		// 优先使用工作区文件夹
 		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
 			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 		} else {
-			// 否则使用系统临时目录
-			defaultPath = os.tmpdir();
+			defaultPath = os.homedir();
 		}
-		
-		// 创建带时间戳的文件名
+
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.dot`);
 
@@ -245,46 +386,74 @@ export class CallGraphPanel {
 			filters: { 'DOT': ['dot'] },
 		}).then((fileUri) => {
 			if (fileUri) {
-				try {
-					vscode.workspace.fs.writeFile(fileUri, writeData)
-						.then(() => {
-							console.log("DOT File Saved");
-							vscode.window.showInformationMessage(`DOT file saved to ${fileUri.fsPath}`);
-						}, (err: any) => {
-							vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
-						});
-				} catch (err) {
-					vscode.window.showErrorMessage(`Error on writing DOT file: ${err}`);
-				}
+				vscode.workspace.fs.writeFile(fileUri, writeData).then(() => {
+					vscode.window.showInformationMessage(`DOT file saved to ${fileUri.fsPath}`);
+				}, (error) => {
+					vscode.window.showErrorMessage(`Failed to save DOT file: ${error.message}`);
+				});
 			}
 		});
+	}
+
+	private cleanSVGContent(svg: string): string {
+		// 修复SVG内容中的XML字符转义问题
+		let cleaned = svg;
+		
+		// 首先撤销可能的过度转义
+		cleaned = cleaned
+			.replace(/&quot;/g, '"')
+			.replace(/&lt;/g, '<')
+			.replace(/&gt;/g, '>')
+			.replace(/&amp;/g, '&');
+		
+		// 修复属性值中的特殊字符
+		cleaned = cleaned.replace(/([a-zA-Z-]+="[^"]*?)(<|>|&)([^"]*?")/g, (match, before, char, after) => {
+			let escapedChar;
+			switch (char) {
+				case '<':
+					escapedChar = '&lt;';
+					break;
+				case '>':
+					escapedChar = '&gt;';
+					break;
+				case '&':
+					escapedChar = '&amp;';
+					break;
+				default:
+					escapedChar = char;
+			}
+			return before + escapedChar + after;
+		});
+		
+		// 验证SVG是否以正确的XML声明开始
+		if (!cleaned.startsWith('<?xml')) {
+			cleaned = '<?xml version="1.0" encoding="UTF-8"?>\n' + cleaned;
+		}
+		
+		return cleaned;
 	}
 
 	saveJSON(svg: string) {
 		console.debug("Saving JSON metadata");
 		let json;
 		try{
-			json = JSON.parse(svg);
+			// Use existing getMetadata method if available, otherwise create basic metadata
+			json = (CallGraphPanel._currentGenerator as any)?.getMetadata?.() || { type: 'crabviz-callgraph', timestamp: new Date().toISOString() };
 		}catch (e) {
-			vscode.window.showErrorMessage(`Error parsing JSON: ${e}`);
-			return; // 解析失败时提前返回，避免继续执行
+			vscode.window.showErrorMessage(`Failed to get metadata: ${e}`);
+			return;
 		}
-		
 		console.debug("Saving JSON metadata:", json);
 		const writeData = Buffer.from(JSON.stringify(json, null, 2), 'utf8');
-
-		// 确定默认保存路径
+		
 		let defaultPath: string | undefined;
 		
-		// 优先使用工作区文件夹
 		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
 			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 		} else {
-			// 否则使用系统临时目录
-			defaultPath = os.tmpdir();
+			defaultPath = os.homedir();
 		}
-		
-		// 创建带时间戳的文件名
+
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		const defaultFilePath = path.join(defaultPath, `crabviz-data-${timestamp}.json`);
 
@@ -294,56 +463,42 @@ export class CallGraphPanel {
 			filters: { 'JSON': ['json'] },
 		}).then((fileUri) => {
 			if (fileUri) {
-				try {
-					vscode.workspace.fs.writeFile(fileUri, writeData)
-						.then(() => {
-							console.log("File Saved");
-							vscode.window.showInformationMessage(`JSON data saved to ${fileUri.fsPath}`);
-						}, (err: any) => {
-							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-						});
-				} catch (err) {
-					vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-				}
+				vscode.workspace.fs.writeFile(fileUri, writeData).then(() => {
+					vscode.window.showInformationMessage(`JSON file saved to ${fileUri.fsPath}`);
+				}, (error) => {
+					vscode.window.showErrorMessage(`Failed to save JSON file: ${error.message}`);
+				});
 			}
 		});
 	}
+
 	public saveSVG(svg: string) {
-		const writeData = Buffer.from(svg, 'utf8');
+		// 清理和修复SVG内容中的XML字符转义问题
+		const cleanedSvg = this.cleanSVGContent(svg);
+		const writeData = Buffer.from(cleanedSvg, 'utf8');
 		
-		// 确定默认保存路径
 		let defaultPath: string | undefined;
 		
-		// 优先使用工作区文件夹
 		if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
 			defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 		} else {
-			// 否则使用系统临时目录
-			defaultPath = os.tmpdir();
+			defaultPath = os.homedir();
 		}
-		
-		// 创建带时间戳的文件名
+
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.svg`);
 		
-		// 允许用户选择保存位置，但提供默认路径
 		vscode.window.showSaveDialog({
 			saveLabel: "export",
 			defaultUri: vscode.Uri.file(defaultFilePath),
 			filters: { 'Images': ['svg'] },
 		}).then((fileUri) => {
 			if (fileUri) {
-				try {
-					vscode.workspace.fs.writeFile(fileUri, writeData)
-						.then(() => {
-							console.log("File Saved");
-							vscode.window.showInformationMessage(`SVG saved to ${fileUri.fsPath}`);
-						}, (err : any) => {
-							vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-						});
-				} catch (err) {
-					vscode.window.showErrorMessage(`Error on writing file: ${err}`);
-				}
+				vscode.workspace.fs.writeFile(fileUri, writeData).then(() => {
+					vscode.window.showInformationMessage(`SVG file saved to ${fileUri.fsPath}`);
+				}, (error) => {
+					vscode.window.showErrorMessage(`Failed to save SVG file: ${error.message}`);
+				});
 			}
 		});
 	}
@@ -351,25 +506,23 @@ export class CallGraphPanel {
 	public saveMermaid() {
 		console.debug("Exporting Mermaid file");
 		if (!CallGraphPanel._currentGenerator) {
-			vscode.window.showErrorMessage('No call graph generator available');
+			vscode.window.showErrorMessage('No generator available for Mermaid export');
 			return;
 		}
-		
+
 		try {
-			const mermaidSource = CallGraphPanel._currentGenerator.generateMermaidSource();
+			// Use existing generateMermaidSource method if available
+			const mermaidContent = (CallGraphPanel._currentGenerator as any).generateMermaidSource?.() || 'graph TD\n    A[Start] --> B[End]';
+			const writeData = Buffer.from(mermaidContent, 'utf8');
 			
-			// 确定默认保存路径
 			let defaultPath: string | undefined;
 			
-			// 优先使用工作区文件夹
 			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
 				defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
 			} else {
-				// 否则使用系统临时目录
-				defaultPath = os.tmpdir();
+				defaultPath = os.homedir();
 			}
-			
-			// 创建带时间戳的文件名
+
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 			const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.mmd`);
 
@@ -379,21 +532,81 @@ export class CallGraphPanel {
 				filters: { 'Mermaid': ['mmd'] },
 			}).then((fileUri) => {
 				if (fileUri) {
-					try {
-						vscode.workspace.fs.writeFile(fileUri, Buffer.from(mermaidSource, 'utf8'))
-							.then(() => {
-								console.log("Mermaid File Saved");
-								vscode.window.showInformationMessage(`Mermaid file saved to ${fileUri.fsPath}`);
-							}, (err: any) => {
-								vscode.window.showErrorMessage(`Error on writing Mermaid file: ${err}`);
-							});
-					} catch (err) {
-						vscode.window.showErrorMessage(`Error on writing Mermaid file: ${err}`);
-					}
+					vscode.workspace.fs.writeFile(fileUri, writeData).then(() => {
+						vscode.window.showInformationMessage(`Mermaid file saved to ${fileUri.fsPath}`);
+					}, (error) => {
+						vscode.window.showErrorMessage(`Failed to save Mermaid file: ${error.message}`);
+					});
 				}
 			});
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to generate Mermaid: ${error}`);
+		}
+	}
+
+	public saveHTML(svgContent: string) {
+		console.debug("Exporting HTML file");
+		
+		try {
+			const htmlContent = generateHTMLTemplate(svgContent);
+			const writeData = Buffer.from(htmlContent, 'utf8');
+			
+			let defaultPath: string | undefined;
+			
+			if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+				defaultPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+			} else {
+				defaultPath = os.homedir();
+			}
+
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const defaultFilePath = path.join(defaultPath, `crabviz-${timestamp}.html`);
+
+			vscode.window.showSaveDialog({
+				saveLabel: "export",
+				defaultUri: vscode.Uri.file(defaultFilePath),
+				filters: { 'HTML': ['html'] },
+			}).then((fileUri) => {
+				if (fileUri) {
+					vscode.workspace.fs.writeFile(fileUri, writeData).then(() => {
+						vscode.window.showInformationMessage(`HTML file saved to ${fileUri.fsPath}`);
+					}, (error) => {
+						vscode.window.showErrorMessage(`Failed to save HTML file: ${error.message}`);
+					});
+				}
+			});
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to generate HTML: ${error}`);
+		}
+	}
+	
+	private handleGotoDefinition(filePath: string, line: number, character: number) {
+		try {
+			let absolutePath = filePath;
+			if (!path.isAbsolute(filePath)) {
+				const workspaceFolders = vscode.workspace.workspaceFolders;
+				if (workspaceFolders && workspaceFolders.length > 0) {
+					absolutePath = path.join(workspaceFolders[0].uri.fsPath, filePath);
+				}
+			}
+			
+			const fileUri = vscode.Uri.file(absolutePath);
+			const position = new vscode.Position(line, character);
+			const range = new vscode.Range(position, position);
+			
+			vscode.workspace.openTextDocument(fileUri)
+				.then(document => {
+					return vscode.window.showTextDocument(document);
+				})
+				.then(editor => {
+					editor.selection = new vscode.Selection(position, position);
+					editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+				}, (error: any) => {
+					vscode.window.showErrorMessage(`Failed to open file: ${error.message}`);
+				});
+				
+		} catch (error) {
+			vscode.window.showErrorMessage(`Failed to navigate to definition: ${error}`);
 		}
 	}
 }

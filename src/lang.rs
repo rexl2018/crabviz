@@ -1,8 +1,9 @@
 mod go;
+mod jsts;
 mod rust;
 
 use {
-    self::{go::Go, rust::Rust},
+    self::{go::Go, jsts::Jsts, rust::Rust},
     crate::{
         generator::FileOutline,
         graph::{Cell, CssClass, Style, TableNode},
@@ -137,6 +138,7 @@ pub(crate) fn language_handler(lang: &str) -> Box<dyn Language + Sync + Send> {
     match lang {
         "Go" => Box::new(Go),
         "Rust" => Box::new(Rust),
-        _ => Box::new(DefaultLang {}),
+        "JavaScript" | "TypeScript" | "JavaScript JSX" | "TypeScript JSX" => Box::new(Jsts),
+        _ => Box::new(DefaultLang),
     }
 }

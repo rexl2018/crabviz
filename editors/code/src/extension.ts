@@ -38,6 +38,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('crabviz.exportMermaid', () => {
 			CallGraphPanel.currentPanel?.exportMermaid();
 		}),
+		vscode.commands.registerCommand('crabviz.exportHTML', () => {
+			CallGraphPanel.currentPanel?.exportHTML();
+		}),
 	);
 }
 
