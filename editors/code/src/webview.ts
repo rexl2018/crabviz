@@ -753,19 +753,40 @@ export class CallGraphPanel {
 					}
 						
 						createPanZoomState() {
-						const g0 = this.svg.querySelector('#graph0');
-						if (!g0) return null;
-						
-						// Remove any existing transform from Graphviz to prevent conflicts
-						g0.removeAttribute('transform');
-						
-					// Pan and zoom implementation
-					let scale = 1;
-					let translateX = 0;
-					let translateY = 0;
-					let isDragging = false;
-					let lastX = 0;
-					let lastY = 0;
+					const g0 = this.svg.querySelector('#graph0');
+					if (!g0) return null;
+					
+					// Remove any existing transform from Graphviz to prevent conflicts
+					g0.removeAttribute('transform');
+					
+				// Pan and zoom implementation
+				let scale = 1;
+				let translateX = 0;
+				let translateY = 0;
+				let isDragging = false;
+				let lastX = 0;
+				let lastY = 0;
+				
+				// State persistence
+				const saveState = () => {
+					const state = {
+						scale,
+						translateX,
+						translateY,
+						selectedElemId: this.selectedElem ? this.selectedElem.id : null
+					};
+					vscode.setState(state);
+					console.log('[State] Saved:', state);
+				};
+				
+				// Restore saved state
+				const savedState = vscode.getState();
+				if (savedState) {
+					scale = savedState.scale || 1;
+					translateX = savedState.translateX || 0;
+					translateY = savedState.translateY || 0;
+					console.log('[State] Restored:', savedState);
+				}
 
 					const updateTransform = () => {
 						const transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
@@ -776,11 +797,16 @@ export class CallGraphPanel {
 						});
 					};
 
-					// Initial centering
-					const svgRect = this.svg.getBoundingClientRect();
-					const g0Rect = g0.getBoundingClientRect();
-					translateX = (svgRect.width - g0Rect.width) / 2 - g0Rect.left + svgRect.left;
-					translateY = (svgRect.height - g0Rect.height) / 2 - g0Rect.top + svgRect.top;
+					// Initial centering (only if no saved state)
+					if (!savedState) {
+						const svgRect = this.svg.getBoundingClientRect();
+						const g0Rect = g0.getBoundingClientRect();
+						translateX = (svgRect.width - g0Rect.width) / 2 - g0Rect.left + svgRect.left;
+						translateY = (svgRect.height - g0Rect.height) / 2 - g0Rect.top + svgRect.top;
+						console.log('[Initial] Centering applied:', { translateX, translateY });
+					} else {
+						console.log('[Initial] Using restored position:', { translateX, translateY });
+					}
 					updateTransform();
 
 					// Zoom
@@ -804,6 +830,7 @@ export class CallGraphPanel {
 
 						console.log('[Zoom]', { mouseX, mouseY, newScale, translateX, translateY });
 						updateTransform();
+						saveState();
 					});
 
 					// Unified mouse interaction handling for both pan and click
@@ -843,6 +870,7 @@ export class CallGraphPanel {
 									lastY = e.clientY;
 									console.log('[Pan]', { deltaX, deltaY, translateX, translateY });
 									updateTransform();
+									saveState();
 								}
 							}
 						});
@@ -883,15 +911,28 @@ export class CallGraphPanel {
 							}
 						});
 
-					return {
-						centerOn: (elem) => {
-							const rect = elem.getBoundingClientRect();
-							const svgRect = this.svg.getBoundingClientRect();
-							translateX = svgRect.width / 2 - (rect.x + rect.width / 2 - svgRect.x);
-							translateY = svgRect.height / 2 - (rect.y + rect.height / 2 - svgRect.y);
-							updateTransform();
+					// Restore selected element if saved
+						if (savedState && savedState.selectedElemId) {
+							setTimeout(() => {
+								const savedElem = this.svg.getElementById(savedState.selectedElemId);
+								if (savedElem && this.onSelectElemCallback) {
+									console.log('[State] Restoring selected element:', savedElem);
+									this.onSelectElemCallback(savedElem);
+								}
+							}, 100);
 						}
-					};
+						
+						return {
+								centerOn: (elem) => {
+									const rect = elem.getBoundingClientRect();
+									const svgRect = this.svg.getBoundingClientRect();
+									translateX = svgRect.width / 2 - (rect.x + rect.width / 2 - svgRect.x);
+									translateY = svgRect.height / 2 - (rect.y + rect.height / 2 - svgRect.y);
+									updateTransform();
+									saveState();
+								},
+								saveState: saveState
+							};
 						}
 						
 						smoothZoom(newScale) {
@@ -911,6 +952,11 @@ export class CallGraphPanel {
 							console.log('[CallGraphInteraction] onSelectElem called with:', elem);
 							this.resetStyles();
 							this.selectedElem = elem;
+							
+							// Save state when selection changes
+							if (this.panZoomState && this.panZoomState.saveState) {
+								this.panZoomState.saveState();
+							}
 							
 							if (!elem) {
 								console.log('[CallGraphInteraction] No element selected, returning');
