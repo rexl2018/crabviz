@@ -265,7 +265,7 @@ export class CallGraphPanel {
 					
 					.graph-container {
 						height: calc(100vh - 56px);
-						overflow: auto;
+						overflow: visible;
 						padding: 20px;
 						background: var(--background-color);
 					}
@@ -699,42 +699,11 @@ export class CallGraphPanel {
 						}
 						
 						setupInteraction(onSelectElem) {
-							const svg = this.svg;
-							let clickPoint = [0, 0];
-							
-							svg.onmousedown = function (e) {
-								clickPoint = [e.pageX, e.pageY];
-							};
-							
-							svg.onmouseup = function (e) {
-								const delta = 6;
-								const [x, y] = clickPoint;
-								const diffX = Math.abs(e.pageX - x);
-								const diffY = Math.abs(e.pageY - y);
-								
-								if (diffX > delta || diffY > delta) {
-									// a mouse drag event
-									return;
-								}
-								
-								for (
-									let elem = e.target;
-									elem && elem instanceof SVGElement && elem !== svg;
-									elem = elem.parentNode
-								) {
-									const classes = elem.classList;
-									if (
-										classes.contains('node') ||
-										classes.contains('cell') ||
-										classes.contains('edge') ||
-										classes.contains('cluster-label')
-									) {
-										onSelectElem(elem);
-										return;
-									}
-								}
-								onSelectElem(null);
-							};
+						const svg = this.svg;
+						// Store the callback for use in createPanZoomState
+						this.onSelectElemCallback = onSelectElem;
+						// The actual interaction setup is now handled in createPanZoomState
+						// to integrate pan and click detection properly
 							
 							// Add double-click event listener for goto definition
 							svg.ondblclick = function (e) {
@@ -784,89 +753,145 @@ export class CallGraphPanel {
 					}
 						
 						createPanZoomState() {
-							const g0 = this.svg.querySelector('#graph0');
-							if (!g0) return null;
-							
-							// Simple pan/zoom implementation without external library
-							let scale = 1;
-							let translateX = 0;
-							let translateY = 0;
-							let isDragging = false;
-							let lastX = 0;
-							let lastY = 0;
-							
-							const updateTransform = () => {
-								g0.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
-							};
-							
-							// Mouse wheel zoom
-							this.svg.addEventListener('wheel', (e) => {
-								e.preventDefault();
-								const delta = e.deltaY > 0 ? 0.9 : 1.1;
-								scale *= delta;
-								scale = Math.max(0.1, Math.min(5, scale));
-								updateTransform();
-							});
-							
-							// Mouse drag pan
-							this.svg.addEventListener('mousedown', (e) => {
-								if (e.button === 1 || e.ctrlKey) { // Middle button or Ctrl+click
-									isDragging = true;
-									lastX = e.clientX;
-									lastY = e.clientY;
-									e.preventDefault();
-								}
-							});
-							
-							document.addEventListener('mousemove', (e) => {
-								if (isDragging) {
-									const deltaX = e.clientX - lastX;
-									const deltaY = e.clientY - lastY;
+						const g0 = this.svg.querySelector('#graph0');
+						if (!g0) return null;
+						
+						// Remove any existing transform from Graphviz to prevent conflicts
+						g0.removeAttribute('transform');
+						
+					// Pan and zoom implementation
+					let scale = 1;
+					let translateX = 0;
+					let translateY = 0;
+					let isDragging = false;
+					let lastX = 0;
+					let lastY = 0;
+
+					const updateTransform = () => {
+						const transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+						g0.style.transform = transform;
+						console.log('[Transform Applied]', {
+							transform,
+							g0Rect: g0.getBoundingClientRect(),
+						});
+					};
+
+					// Initial centering
+					const svgRect = this.svg.getBoundingClientRect();
+					const g0Rect = g0.getBoundingClientRect();
+					translateX = (svgRect.width - g0Rect.width) / 2 - g0Rect.left + svgRect.left;
+					translateY = (svgRect.height - g0Rect.height) / 2 - g0Rect.top + svgRect.top;
+					updateTransform();
+
+					// Zoom
+					this.svg.addEventListener('wheel', (e) => {
+						e.preventDefault();
+						const rect = this.svg.getBoundingClientRect();
+						const mouseX = e.clientX - rect.left;
+						const mouseY = e.clientY - rect.top;
+
+						const delta = e.deltaY > 0 ? 0.9 : 1.1;
+						const newScale = Math.max(0.1, Math.min(5, scale * delta));
+
+						// Point in SVG space before zoom
+						const pointX = (mouseX - translateX) / scale;
+						const pointY = (mouseY - translateY) / scale;
+
+						// New translate to keep the point under the mouse
+						translateX = mouseX - pointX * newScale;
+						translateY = mouseY - pointY * newScale;
+						scale = newScale;
+
+						console.log('[Zoom]', { mouseX, mouseY, newScale, translateX, translateY });
+						updateTransform();
+					});
+
+					// Unified mouse interaction handling for both pan and click
+						let panStartX = 0, panStartY = 0;
+						let clickStartX = 0, clickStartY = 0;
+						let hasDragged = false;
+						const DRAG_THRESHOLD = 6; // pixels - same as original click detection
+						const onSelectElem = this.onSelectElemCallback;
+
+						this.svg.addEventListener('mousedown', (e) => {
+							if (e.button === 0) { // Left mouse button
+								panStartX = e.clientX;
+								panStartY = e.clientY;
+								clickStartX = e.pageX;
+								clickStartY = e.pageY;
+								lastX = e.clientX;
+								lastY = e.clientY;
+								hasDragged = false;
+							}
+						});
+
+						document.addEventListener('mousemove', (e) => {
+							if (e.buttons === 1) { // Left button is pressed
+								const deltaX = e.clientX - lastX;
+								const deltaY = e.clientY - lastY;
+								const totalDelta = Math.abs(e.clientX - panStartX) + Math.abs(e.clientY - panStartY);
+								
+								if (totalDelta > DRAG_THRESHOLD) {
+									if (!isDragging) {
+										isDragging = true;
+										this.svg.style.cursor = 'grabbing';
+									}
+									hasDragged = true;
 									translateX += deltaX;
 									translateY += deltaY;
 									lastX = e.clientX;
 									lastY = e.clientY;
+									console.log('[Pan]', { deltaX, deltaY, translateX, translateY });
 									updateTransform();
 								}
-							});
-							
-							document.addEventListener('mouseup', () => {
+							}
+						});
+
+						document.addEventListener('mouseup', (e) => {
+							if (e.button === 0) {
 								isDragging = false;
-							});
-							
-							const cRect = g0.getBoundingClientRect();
-							const cx = cRect.x + cRect.width / 2;
-							const cy = cRect.y + cRect.height / 2;
-							const sRect = this.svg.getBoundingClientRect();
-							
-							return {
-								scale,
-								x: translateX,
-								y: translateY,
-								cx,
-								cy,
-								sRect,
-								smoothZoom: (cx, cy, newScale) => {
-									scale = newScale;
-									updateTransform();
-								},
-								centerOn: (elem) => {
-									const rect = elem.getBoundingClientRect();
-									const svgRect = this.svg.getBoundingClientRect();
-									translateX = svgRect.width / 2 - (rect.x + rect.width / 2 - svgRect.x);
-									translateY = svgRect.height / 2 - (rect.y + rect.height / 2 - svgRect.y);
-									updateTransform();
-								},
-								moveTo: (x, y) => {
-									translateX = x;
-									translateY = y;
-									updateTransform();
-								},
-								zoomAbs: (x, y, newScale) => {
-									scale = newScale;
-									updateTransform();
+								this.svg.style.cursor = 'grab';
+								
+								// Handle click detection if we didn't drag
+								if (!hasDragged) {
+									const diffX = Math.abs(e.pageX - clickStartX);
+									const diffY = Math.abs(e.pageY - clickStartY);
+									
+									if (diffX <= DRAG_THRESHOLD && diffY <= DRAG_THRESHOLD) {
+										// This is a click, not a drag
+										for (
+											let elem = e.target;
+											elem && elem instanceof SVGElement && elem !== this.svg;
+											elem = elem.parentNode
+										) {
+											const classes = elem.classList;
+											if (
+												classes.contains('node') ||
+												classes.contains('cell') ||
+												classes.contains('edge') ||
+												classes.contains('cluster-label')
+											) {
+												console.log('[Click] Element selected:', elem);
+												if (onSelectElem) onSelectElem(elem);
+												return;
+											}
+										}
+										console.log('[Click] No element selected, clearing selection');
+										if (onSelectElem) onSelectElem(null);
+									}
 								}
-							};
+							}
+						});
+
+					return {
+						centerOn: (elem) => {
+							const rect = elem.getBoundingClientRect();
+							const svgRect = this.svg.getBoundingClientRect();
+							translateX = svgRect.width / 2 - (rect.x + rect.width / 2 - svgRect.x);
+							translateY = svgRect.height / 2 - (rect.y + rect.height / 2 - svgRect.y);
+							updateTransform();
+						}
+					};
 						}
 						
 						smoothZoom(newScale) {
@@ -894,13 +919,13 @@ export class CallGraphPanel {
 							
 							// Auto-center on selected element if needed
 							if (this.panZoomState) {
-								const { sRect } = this.panZoomState;
+								const svgRect = this.svg.getBoundingClientRect();
 								const eRect = elem.getBoundingClientRect();
 								if (
-									eRect.left < sRect.left ||
-									eRect.top < sRect.top ||
-									eRect.right > sRect.right ||
-									eRect.bottom > sRect.bottom
+									eRect.left < svgRect.left ||
+									eRect.top < svgRect.top ||
+									eRect.right > svgRect.right ||
+									eRect.bottom > svgRect.bottom
 								) {
 									this.panZoomState.centerOn(elem);
 								}
