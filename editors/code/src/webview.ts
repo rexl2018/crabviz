@@ -493,7 +493,7 @@ export class CallGraphPanel {
 					<div class="search-container">
 						<input type="text" id="search-input" placeholder="Search symbols and files..." />
 						<button id="search-btn" title="Search">🔍</button>
-						<button id="clear-search-btn" title="Clear search">✕</button>
+						<button id="reset-btn" title="Reset all states">🔄</button>
 					</div>
 					<div class="export-container">
 						<button id="export-svg-btn" title="Export as SVG">📄 SVG</button>
@@ -512,7 +512,7 @@ export class CallGraphPanel {
 					// Search functionality
 					const searchInput = document.getElementById('search-input');
 					const searchBtn = document.getElementById('search-btn');
-					const clearBtn = document.getElementById('clear-search-btn');
+					const resetBtn = document.getElementById('reset-btn');
 					
 					function performSearch(query) {
 						if (!query.trim()) {
@@ -544,9 +544,40 @@ export class CallGraphPanel {
 						performSearch(searchInput.value);
 					});
 					
-					clearBtn.addEventListener('click', () => {
+					resetBtn.addEventListener('click', () => {
+						console.log('[Reset] Starting reset process');
+						
+						// Reset search
+						console.log('[Reset] Clearing search input and highlights');
 						searchInput.value = '';
 						clearSearchHighlights();
+						
+						// Reset selection and highlights
+						if (window.graphInteraction) {
+							console.log('[Reset] Resetting styles and selection');
+							console.log('[Reset] Selected element before reset:', window.graphInteraction.selectedElem);
+							window.graphInteraction.resetStyles();
+							window.graphInteraction.selectedElem = null;
+							console.log('[Reset] Selected element after reset:', window.graphInteraction.selectedElem);
+						}
+						
+						// Clear saved state first
+						console.log('[Reset] Clearing saved state');
+						vscode.setState(null);
+						
+						// Reset zoom and pan by recreating the interaction
+						const svgElement = document.querySelector('svg');
+						const g0 = svgElement?.querySelector('#graph0');
+						if (svgElement && window.graphInteraction) {
+							console.log('[Reset] Current g0 transform before reset:', g0?.style.transform);
+							console.log('[Reset] Recreating panZoomState');
+							// Recreate the pan zoom state to reset everything
+							window.graphInteraction.panZoomState = window.graphInteraction.createPanZoomState();
+							console.log('[Reset] New g0 transform after reset:', g0?.style.transform);
+							console.log('[Reset] New panZoomState created:', !!window.graphInteraction.panZoomState);
+						}
+						
+						console.log('[Reset] All states reset to initial');
 					});
 					
 					searchInput.addEventListener('keydown', (e) => {
@@ -791,19 +822,44 @@ export class CallGraphPanel {
 					const updateTransform = () => {
 						const transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
 						g0.style.transform = transform;
-						console.log('[Transform Applied]', {
-							transform,
-							g0Rect: g0.getBoundingClientRect(),
-						});
 					};
 
 					// Initial centering (only if no saved state)
 					if (!savedState) {
+						// Get the actual content bounds from g0 element
 						const svgRect = this.svg.getBoundingClientRect();
 						const g0Rect = g0.getBoundingClientRect();
-						translateX = (svgRect.width - g0Rect.width) / 2 - g0Rect.left + svgRect.left;
-						translateY = (svgRect.height - g0Rect.height) / 2 - g0Rect.top + svgRect.top;
-						console.log('[Initial] Centering applied:', { translateX, translateY });
+						
+						// Reset any existing transform to get natural bounds
+						g0.style.transform = '';
+						const naturalG0Rect = g0.getBoundingClientRect();
+						
+						// Calculate scale to fit content with margin
+						const scaleX = (svgRect.width * 0.8) / naturalG0Rect.width;
+						const scaleY = (svgRect.height * 0.8) / naturalG0Rect.height;
+						scale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+						
+						// Calculate center position
+						// We want to center the scaled content in the SVG viewport
+						const scaledWidth = naturalG0Rect.width * scale;
+						const scaledHeight = naturalG0Rect.height * scale;
+						
+						// Center the scaled content
+						translateX = (svgRect.width - scaledWidth) / 2;
+						translateY = (svgRect.height - scaledHeight) / 2;
+						
+						// Account for the natural offset of g0 content
+						const g0OffsetX = naturalG0Rect.left - svgRect.left;
+						const g0OffsetY = naturalG0Rect.top - svgRect.top;
+						translateX -= g0OffsetX * scale;
+						translateY -= g0OffsetY * scale;
+						
+						console.log('[Initial] Centering applied:', {
+							translateX, translateY, scale,
+							svgSize: { width: svgRect.width, height: svgRect.height },
+							naturalG0Size: { width: naturalG0Rect.width, height: naturalG0Rect.height },
+							g0Offset: { x: g0OffsetX, y: g0OffsetY }
+						});
 					} else {
 						console.log('[Initial] Using restored position:', { translateX, translateY });
 					}
@@ -828,7 +884,6 @@ export class CallGraphPanel {
 						translateY = mouseY - pointY * newScale;
 						scale = newScale;
 
-						console.log('[Zoom]', { mouseX, mouseY, newScale, translateX, translateY });
 						updateTransform();
 						saveState();
 					});
@@ -868,7 +923,6 @@ export class CallGraphPanel {
 									translateY += deltaY;
 									lastX = e.clientX;
 									lastY = e.clientY;
-									console.log('[Pan]', { deltaX, deltaY, translateX, translateY });
 									updateTransform();
 									saveState();
 								}
@@ -886,26 +940,24 @@ export class CallGraphPanel {
 									const diffY = Math.abs(e.pageY - clickStartY);
 									
 									if (diffX <= DRAG_THRESHOLD && diffY <= DRAG_THRESHOLD) {
-										// This is a click, not a drag
-										for (
-											let elem = e.target;
-											elem && elem instanceof SVGElement && elem !== this.svg;
-											elem = elem.parentNode
-										) {
-											const classes = elem.classList;
-											if (
-												classes.contains('node') ||
-												classes.contains('cell') ||
-												classes.contains('edge') ||
-												classes.contains('cluster-label')
-											) {
-												console.log('[Click] Element selected:', elem);
-												if (onSelectElem) onSelectElem(elem);
-												return;
-											}
-										}
-										console.log('[Click] No element selected, clearing selection');
-										if (onSelectElem) onSelectElem(null);
+													// This is a click, not a drag - handle element selection
+													for (
+														let elem = e.target;
+														elem && elem instanceof SVGElement && elem !== this.svg;
+														elem = elem.parentNode
+													) {
+														const classes = elem.classList;
+														if (
+															classes.contains('node') ||
+															classes.contains('cell') ||
+															classes.contains('edge') ||
+															classes.contains('cluster-label')
+														) {
+															this.onSelectElem(elem);
+															return;
+														}
+													}
+													this.onSelectElem(null);
 									}
 								}
 							}
@@ -995,7 +1047,10 @@ export class CallGraphPanel {
 								console.log('[CallGraphInteraction] No matching element type found');
 							}
 							
-							// Call the selection callback if it exists
+							// Call the selection callbacks
+							if (this.onSelectElemCallback) {
+								this.onSelectElemCallback(elem);
+							}
 							if (this.onElementSelected) {
 								this.onElementSelected(elem);
 							}
@@ -1192,10 +1247,17 @@ export class CallGraphPanel {
 						}
 						
 						resetStyles() {
-						const g0 = this.svg.getElementById('graph0');
-						const fadedGroup = this.svg.getElementById('faded-group');
-						
-						this.selectedElem?.closest('.selected')?.classList.remove('selected');
+					const g0 = this.svg.getElementById('graph0');
+					const fadedGroup = this.svg.getElementById('faded-group');
+					
+					// Remove selected class from current element
+					if (this.selectedElem) {
+						this.selectedElem.classList.remove('selected');
+					}
+					// Also remove from any other selected elements
+					g0.querySelectorAll('.selected').forEach(elem => {
+						elem.classList.remove('selected');
+					});
 						g0.querySelectorAll(':scope > .edge').forEach((edge) =>
 							edge.classList.remove('incoming', 'outgoing')
 						);
@@ -1223,16 +1285,14 @@ export class CallGraphPanel {
 							// Add data attributes to edges and nodes for interaction
 						addDataAttributes(svgElement);
 							
-							const interaction = new CallGraphInteraction(svgElement);
-						
-						// Enhanced selection callback with search bar integration
-						interaction.onElementSelected = (elem) => {
+							// Enhanced selection callback with search bar integration
+						const onSelectElemCallback = (elem) => {
 							if (elem) {
 								// Auto-fill search input with selected element info
 								const searchInput = document.getElementById('search-input');
 								if (searchInput && elem.classList.contains('cell')) {
 									// For cells, find function name by looking for clickable cell elements
-									const clickableCell = elem.querySelector('a[xlink\\:href*="clickable.cell"] text');
+									const clickableCell = elem.querySelector('a[*|href*="clickable.cell"] text');
 									let targetText = '';
 									if (clickableCell) {
 										// Use the text from clickable cell (function/method name)
@@ -1253,42 +1313,52 @@ export class CallGraphPanel {
 										searchInput.value = titleElement.textContent || '';
 									}
 								}
-								
-								// Add goto definition functionality
-								if (elem.classList.contains('cell') || elem.classList.contains('node')) {
-									elem.style.cursor = 'pointer';
-									elem.addEventListener('dblclick', () => {
-										let filePath, line = 0, character = 0;
-										
-										if (elem.classList.contains('node')) {
-											filePath = elem.dataset.path;
-										} else {
-											const parts = elem.id.split(':');
-											if (parts.length > 1) {
-												const nodeId = parts[0];
-												const nodeElement = document.getElementById(nodeId);
-												filePath = nodeElement?.dataset.path;
-												
-												const coords = parts[1].split('_');
-												if (coords.length === 2) {
-													line = parseInt(coords[0]) || 0;
-													character = parseInt(coords[1]) || 0;
-												}
-											}
-										}
-										
-										if (filePath) {
-											vscode.postMessage({
-												command: 'gotoDefinition',
-												filePath: filePath,
-												line: line,
-												character: character
-											});
-										}
-									});
-								}
 							}
 						};
+						
+						const interaction = new CallGraphInteraction(svgElement, null, onSelectElemCallback);
+						
+						// Store interaction instance globally for search integration
+						window.graphInteraction = interaction;
+					
+					// Additional selection callback for goto definition
+					interaction.onElementSelected = (elem) => {
+						if (elem) {
+							// Add goto definition functionality
+							if (elem.classList.contains('cell') || elem.classList.contains('node')) {
+								elem.style.cursor = 'pointer';
+								elem.addEventListener('dblclick', () => {
+									let filePath, line = 0, character = 0;
+									
+									if (elem.classList.contains('node')) {
+										filePath = elem.dataset.path;
+									} else {
+										const parts = elem.id.split(':');
+										if (parts.length > 1) {
+											const nodeId = parts[0];
+											const nodeElement = document.getElementById(nodeId);
+											filePath = nodeElement?.dataset.path;
+											
+											const coords = parts[1].split('_');
+											if (coords.length === 2) {
+												line = parseInt(coords[0]) || 0;
+												character = parseInt(coords[1]) || 0;
+											}
+										}
+									}
+									
+									if (filePath) {
+										vscode.postMessage({
+											command: 'gotoDefinition',
+											filePath: filePath,
+											line: line,
+											character: character
+										});
+									}
+								});
+							}
+						}
+					};
 					}
 					
 					// Enhanced search with element selection
@@ -1325,10 +1395,7 @@ export class CallGraphPanel {
 						}
 					}
 					
-					// Store interaction instance globally for search integration
-					if (svgElement) {
-						window.graphInteraction = interaction;
-					}
+
 					
 					// Update search event listeners to use enhanced search
 					searchBtn.addEventListener('click', () => {
