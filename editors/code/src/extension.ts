@@ -22,22 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('crabviz.customCallGraphList', manager.customCallGraphList.bind(manager)),
 		vscode.commands.registerCommand('crabviz.customCallGraphDelete', manager.customCallGraphDelete.bind(manager)),
 		vscode.commands.registerCommand('crabviz.customCallGraphGenerate', manager.customCallGraphGenerate.bind(manager)),
-		// 导出命令
-		vscode.commands.registerCommand('crabviz.exportCallGraph', () => {
-			CallGraphPanel.currentPanel?.exportSVG();
-		}),
-		vscode.commands.registerCommand('crabviz.exportCrabViz', () => {
-			CallGraphPanel.currentPanel?.exportCrabViz();
-		}),
-		vscode.commands.registerCommand('crabviz.exportJSON', () => {
-			CallGraphPanel.currentPanel?.exportJSON();
-		}),
-		vscode.commands.registerCommand('crabviz.exportDot', () => {
-			CallGraphPanel.currentPanel?.exportDot();
-		}),
-		vscode.commands.registerCommand('crabviz.exportMermaid', () => {
-			CallGraphPanel.currentPanel?.exportMermaid();
-		}),
+
 	);
 }
 

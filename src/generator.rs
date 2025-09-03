@@ -22,6 +22,7 @@ pub(crate) use types::*;
 use {
     crate::{
         graph::{dot::Dot, Cell, CssClass, Edge, Subgraph},
+        graph_model::{Graph, GraphBuilder, RelationKind, GlobalPosition},
         lang,
         lsp_types::{
             CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall,
@@ -375,10 +376,10 @@ impl GraphGenerator {
                 // 添加文件级subgraph开始标记 - 确保ID格式正确
                 mermaid.push_str(&format!("        subgraph file{}_{} [\"{}\"]\n", dir_index, file_index, file_title));
                 
-                // 添加当前文件中的所有节点
+                // 添加当前文件中的所有节点，使用新的层次结构
                 for table in file_tables {
                     for section in &table.sections {
-                        self.add_mermaid_cell(table.id, section, &mut mermaid);
+                        self.add_mermaid_cell_with_type_subgraphs(table.id, section, &mut mermaid, 3);
                     }
                 }
                 
@@ -397,7 +398,7 @@ impl GraphGenerator {
         // 添加未包含在任何文件中的节点
         for table in &orphan_tables {
             for section in &table.sections {
-                self.add_mermaid_cell(table.id, section, &mut mermaid);
+                self.add_mermaid_cell_with_type_subgraphs(table.id, section, &mut mermaid, 1);
             }
         }
         
@@ -415,7 +416,7 @@ impl GraphGenerator {
         let id = format!("{}_{}_{}", table_id, cell.range_start.0, cell.range_start.1);
         let label = cell.title.replace('"', "\\\"").replace('[', "\\[").replace(']', "\\]");
         
-        mermaid.push_str(&format!("    {}[\"{}\"]", id, label));
+        mermaid.push_str(&format!("    {}[\"{}\"]" , id, label));
         
         // 添加样式
         if !cell.style.classes.is_empty() {
@@ -431,8 +432,135 @@ impl GraphGenerator {
         }
     }
     
+    fn add_mermaid_cell_with_type_subgraphs(&self, table_id: u32, cell: &Cell, mermaid: &mut String, indent_level: usize) {
+        let indent = "    ".repeat(indent_level);
+        let id = format!("{}_{}_{}", table_id, cell.range_start.0, cell.range_start.1);
+        let label = cell.title.replace('"', "\\\"").replace('[', "\\[").replace(']', "\\]");
+        
+        // 检查是否是容器类型（可以包含其他符号的类型）
+        let is_container_type = if !cell.style.classes.is_empty() {
+            // 检查是否包含Type、Interface、Module等容器类型的样式类
+            // 或者是只有Cell类但有子节点的情况（如impl块）
+            cell.style.classes.contains(CssClass::Type) ||
+            cell.style.classes.contains(CssClass::Interface) ||
+            cell.style.classes.contains(CssClass::Module) ||
+            (cell.style.classes.contains(CssClass::Cell) && 
+             !cell.style.classes.contains(CssClass::Function) &&
+             !cell.style.classes.contains(CssClass::Method) &&
+             !cell.style.classes.contains(CssClass::Constructor) &&
+             !cell.style.classes.contains(CssClass::Property))
+        } else {
+            false
+        };
+        
+        if is_container_type && !cell.children.is_empty() {
+            // 如果是容器类型且有子节点，创建一个subgraph
+            mermaid.push_str(&format!("{}subgraph {} [\"{}\"]
+", indent, id, label));
+            
+            // 添加子节点（方法、属性等）
+            for child in &cell.children {
+                self.add_mermaid_cell_with_type_subgraphs(table_id, child, mermaid, indent_level + 1);
+            }
+            
+            mermaid.push_str(&format!("{}end\n", indent));
+        } else {
+            // 普通节点或叶子节点
+            mermaid.push_str(&format!("{}{}[\"{}\"]" , indent, id, label));
+            
+            // 添加样式
+            if !cell.style.classes.is_empty() {
+                // 获取主要的样式类用于显示
+                let primary_class = if cell.style.classes.contains(CssClass::Type) {
+                    "type"
+                } else if cell.style.classes.contains(CssClass::Interface) {
+                    "interface"
+                } else if cell.style.classes.contains(CssClass::Module) {
+                    "module"
+                } else if cell.style.classes.contains(CssClass::Function) {
+                    "function"
+                } else if cell.style.classes.contains(CssClass::Method) {
+                    "method"
+                } else if cell.style.classes.contains(CssClass::Constructor) {
+                    "constructor"
+                } else if cell.style.classes.contains(CssClass::Property) {
+                    "property"
+                } else if cell.style.classes.contains(CssClass::Impl) {
+                    "impl"
+                } else {
+                    "cell"
+                };
+                mermaid.push_str(&format!(":::{}\n", primary_class));
+            } else {
+                mermaid.push_str("\n");
+            }
+            
+            // 递归处理子节点（对于非容器类型节点）
+            for child in &cell.children {
+                self.add_mermaid_cell_with_type_subgraphs(table_id, child, mermaid, indent_level);
+            }
+        }
+    }
+    
 
 
+    /// Generate a structured graph model for frontend consumption
+    pub fn generate_graph(&self) -> Graph {
+        let mut builder = GraphBuilder::new();
+        
+        // Add all files and their symbols
+        for (path, file_outline) in &self.files {
+            builder.add_file(path.clone(), file_outline.symbols.clone());
+        }
+        
+        // Add call relationships
+        for (callee_location, callers) in &self.incoming_calls {
+            if let Some(callee_file) = self.files.get(&callee_location.path) {
+                let callee_global_pos = GlobalPosition::new(
+                    callee_file.id,
+                    Position {
+                        line: callee_location.line,
+                        character: callee_location.character,
+                    }
+                );
+                
+                for caller in callers {
+                    if let Some(caller_global_pos) = self.call_item_to_global_position(&caller.from) {
+                        builder.add_relation(caller_global_pos, callee_global_pos, RelationKind::Call);
+                    }
+                }
+            }
+        }
+        
+        // Add interface implementations
+        for (interface_location, implementations) in &self.interfaces {
+            if let Some(interface_file) = self.files.get(&interface_location.path) {
+                let interface_global_pos = GlobalPosition::new(
+                    interface_file.id,
+                    Position {
+                        line: interface_location.line,
+                        character: interface_location.character,
+                    }
+                );
+                
+                for impl_location in implementations {
+                    if let Some(impl_file) = self.files.get(&impl_location.path) {
+                        let impl_global_pos = GlobalPosition::new(
+                            impl_file.id,
+                            Position {
+                                line: impl_location.line,
+                                character: impl_location.character,
+                            }
+                        );
+                        builder.add_relation(impl_global_pos, interface_global_pos, RelationKind::Impl);
+                    }
+                }
+            }
+        }
+        
+        builder.build()
+    }
+    
     pub fn generate_dot_source(&self) -> String {
         let files = &self.files;
 
@@ -627,6 +755,12 @@ impl GraphGenerator {
             .for_each(|child| self.collect_cell_ids(table_id, child, ids));
     }
 
+    fn call_item_to_global_position(&self, item: &CallHierarchyItem) -> Option<GlobalPosition> {
+        let file_path = item.uri.path.as_str();
+        let file = self.files.get(file_path)?;
+        Some(GlobalPosition::new(file.id, item.selection_range.start))
+    }
+    
     fn try_insert_symbol(&self, item: &CallHierarchyItem, file: &mut FileOutline) -> bool {
         let mut symbols = &mut file.symbols;
         let mut is_subsymbol = false;

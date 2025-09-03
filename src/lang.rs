@@ -1,8 +1,9 @@
 mod go;
+mod jsts;
 mod rust;
 
 use {
-    self::{go::Go, rust::Rust},
+    self::{go::Go, jsts::Jsts, rust::Rust},
     crate::{
         generator::FileOutline,
         graph::{Cell, CssClass, Style, TableNode},
@@ -26,6 +27,7 @@ pub(crate) trait Language: Send + Sync {
         TableNode {
             id: file.id,
             title: file.path.file_name().unwrap().to_str().unwrap().to_string(),
+            path: Some(file.path.to_string_lossy().to_string()),
             sections,
         }
     }
@@ -44,6 +46,7 @@ pub(crate) trait Language: Send + Sync {
             range_start: (range.start.line, range.start.character),
             range_end: (range.end.line, range.end.character),
             style: self.symbol_style(symbol),
+            symbol_kind: Some(symbol.kind),
             title: symbol.name.clone(),
             children,
         }
@@ -137,6 +140,7 @@ pub(crate) fn language_handler(lang: &str) -> Box<dyn Language + Sync + Send> {
     match lang {
         "Go" => Box::new(Go),
         "Rust" => Box::new(Rust),
-        _ => Box::new(DefaultLang {}),
+        "JavaScript" | "TypeScript" | "JavaScript JSX" | "TypeScript JSX" => Box::new(Jsts),
+        _ => Box::new(DefaultLang),
     }
 }

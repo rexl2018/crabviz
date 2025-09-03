@@ -250,6 +250,103 @@ fn test_highlight() {
 }
 
 #[test]
+fn test_edge_data_attributes() {
+    let mut generator = GraphGenerator::new("test_root".to_string(), "rust");
+    
+    // 添加测试文件和符号
+    let file_path = "test.rs";
+    let range1 = Range {
+        start: Position { line: 1, character: 0 },
+        end: Position { line: 1, character: 10 },
+    };
+    let range2 = Range {
+        start: Position { line: 5, character: 0 },
+        end: Position { line: 5, character: 10 },
+    };
+    
+    let symbols = vec![
+        DocumentSymbol {
+            name: "caller_function".to_string(),
+            detail: None,
+            kind: SymbolKind::Function,
+            tags: None,
+            range: range1.clone(),
+            selection_range: range1.clone(),
+            children: vec![],
+        },
+        DocumentSymbol {
+            name: "callee_function".to_string(),
+            detail: None,
+            kind: SymbolKind::Function,
+            tags: None,
+            range: range2.clone(),
+            selection_range: range2.clone(),
+            children: vec![],
+        },
+    ];
+    
+    generator.add_file(file_path.to_string(), symbols);
+    
+    // 添加调用关系
+    let from_range = Range {
+        start: Position { line: 1, character: 0 },
+        end: Position { line: 1, character: 10 },
+    };
+    
+    let incoming_call = CallHierarchyIncomingCall {
+        from: CallHierarchyItem {
+            name: "caller_function".to_string(),
+            kind: SymbolKind::Function,
+            tags: None,
+            detail: None,
+            uri: Uri { path: file_path.to_string() },
+            range: from_range.clone(),
+            selection_range: from_range.clone(),
+            data: None,
+        },
+        from_ranges: vec![from_range],
+    };
+    
+    generator.add_incoming_calls(
+        file_path.to_string(),
+        range2.start,
+        vec![incoming_call],
+    );
+    
+    // 也添加一个outgoing call来确保有边生成
+    let outgoing_call = CallHierarchyOutgoingCall {
+        to: CallHierarchyItem {
+            name: "callee_function".to_string(),
+            kind: SymbolKind::Function,
+            tags: None,
+            detail: None,
+            uri: Uri { path: file_path.to_string() },
+            range: range2.clone(),
+            selection_range: range2.clone(),
+            data: None,
+        },
+        from_ranges: vec![range1.clone()],
+    };
+    
+    generator.add_outgoing_calls(
+         file_path.to_string(),
+         range1.start,
+         vec![outgoing_call],
+     );
+    
+    // 生成 DOT 源码
+    let dot_source = generator.generate_dot_source();
+    println!("Generated DOT source for edge attributes test:");
+    println!("{}", dot_source);
+    
+    // 验证边是否包含 datafrom 和 datato 属性
+    assert!(dot_source.contains("datafrom"), "DOT source should contain datafrom attribute");
+    assert!(dot_source.contains("datato"), "DOT source should contain datato attribute");
+    
+    println!("✅ Edge data attributes test passed!");
+}
+
+#[test]
 fn test_performance() {
     let mut generator = GraphGenerator::new("test_root".to_string(), "rust");
     

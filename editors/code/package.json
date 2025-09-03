@@ -74,6 +74,10 @@
       {
         "command": "crabviz.exportMermaid",
         "title": "Export Mermaid File"
+      },
+      {
+        "command": "crabviz.exportHTML",
+        "title": "Export HTML File"
       }
     ],
     "menus": {
@@ -108,6 +112,10 @@
         },
         {
           "command": "crabviz.exportMermaid",
+          "when": "never"
+        },
+        {
+          "command": "crabviz.exportHTML",
           "when": "never"
         }
       ],
@@ -170,6 +178,10 @@
         },
         {
           "command": "crabviz.exportMermaid",
+          "when": "webviewId == 'crabviz.callgraph'"
+        },
+        {
+          "command": "crabviz.exportHTML",
           "when": "webviewId == 'crabviz.callgraph'"
         }
       ]

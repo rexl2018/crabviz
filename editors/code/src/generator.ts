@@ -39,6 +39,22 @@ export class Generator {
   public generateMermaidSource(): string {
     return this.inner.generate_mermaid_source();
   }
+  
+  public generateGraph(): any {
+    return this.inner.generate_graph();
+  }
+  
+  public searchSymbols(query: string, caseSensitive: boolean = false): any {
+    return this.inner.search_symbols(query, caseSensitive);
+  }
+  
+  public searchFiles(query: string, caseSensitive: boolean = false): any {
+    return this.inner.search_files(query, caseSensitive);
+  }
+  
+  public searchBySymbolKind(kind: number): any {
+    return this.inner.search_by_symbol_kind(kind);
+  }
 
   public async generateCallGraph(
     files: vscode.Uri[],

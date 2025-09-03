@@ -333,4 +333,107 @@ impl GraphGeneratorWasm {
         }
         String::new() // 如果所有尝试都失败，返回空字符串
     }
+
+    pub fn generate_graph(&self) -> JsValue {
+        // 尝试最多3次借用，以处理可能的临时借用冲突
+        for attempt in 0..3 {
+            match self.inner.try_borrow() {
+                Ok(inner) => {
+                    let graph = inner.generate_graph();
+                    return serde_wasm_bindgen::to_value(&graph).unwrap_or(JsValue::NULL);
+                },
+                Err(_) => {
+                    if attempt == 2 { // 最后一次尝试失败
+                        #[cfg(feature = "vscode")]
+                        console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for generate_graph after multiple attempts: BorrowError"));
+                    } else {
+                        // 短暂等待后重试
+                        #[cfg(feature = "vscode")]
+                        console::warn_1(&JsValue::from_str(&format!("Retry borrowing GraphGenerator for generate_graph: attempt {}", attempt + 1)));
+                        // 在WebAssembly环境中模拟短暂延迟
+                        let mut i = 0;
+                        while i < 1000000 { i += 1; } // 简单的忙等待循环
+                    }
+                }
+            }
+        }
+        JsValue::NULL // 如果所有尝试都失败，返回NULL
+    }
+    
+    pub fn search_symbols(&self, query: String, case_sensitive: bool) -> JsValue {
+        match self.inner.try_borrow() {
+            Ok(inner) => {
+                let graph = inner.generate_graph();
+                let results = graph.search_symbols(&query, case_sensitive);
+                serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+            },
+            Err(_) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for search_symbols"));
+                JsValue::NULL
+            }
+        }
+    }
+    
+    pub fn search_files(&self, query: String, case_sensitive: bool) -> JsValue {
+        match self.inner.try_borrow() {
+            Ok(inner) => {
+                let graph = inner.generate_graph();
+                let results = graph.search_files(&query, case_sensitive);
+                serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+            },
+            Err(_) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for search_files"));
+                JsValue::NULL
+            }
+        }
+    }
+    
+    pub fn search_by_symbol_kind(&self, kind: u8) -> JsValue {
+        use crate::graph_model::SymbolKind;
+        
+        let symbol_kind = match kind {
+            1 => SymbolKind::File,
+            2 => SymbolKind::Module,
+            3 => SymbolKind::Namespace,
+            4 => SymbolKind::Package,
+            5 => SymbolKind::Class,
+            6 => SymbolKind::Method,
+            7 => SymbolKind::Property,
+            8 => SymbolKind::Field,
+            9 => SymbolKind::Constructor,
+            10 => SymbolKind::Enum,
+            11 => SymbolKind::Interface,
+            12 => SymbolKind::Function,
+            13 => SymbolKind::Variable,
+            14 => SymbolKind::Constant,
+            15 => SymbolKind::String,
+            16 => SymbolKind::Number,
+            17 => SymbolKind::Boolean,
+            18 => SymbolKind::Array,
+            19 => SymbolKind::Object,
+            20 => SymbolKind::Key,
+            21 => SymbolKind::Null,
+            22 => SymbolKind::EnumMember,
+            23 => SymbolKind::Struct,
+            24 => SymbolKind::Event,
+            25 => SymbolKind::Operator,
+            26 => SymbolKind::TypeParameter,
+            _ => return JsValue::NULL,
+        };
+        
+        match self.inner.try_borrow() {
+            Ok(inner) => {
+                let graph = inner.generate_graph();
+                let results = graph.search_by_symbol_kind(symbol_kind);
+                serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+            },
+            Err(_) => {
+                #[cfg(feature = "vscode")]
+                console::error_1(&JsValue::from_str("Failed to borrow GraphGenerator for search_by_symbol_kind"));
+                JsValue::NULL
+            }
+        }
+    }
 }
