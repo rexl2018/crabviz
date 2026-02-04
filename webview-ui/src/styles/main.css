@@ -1,0 +1,20 @@
+@layer openprops, theme, components.base, components.has-deps;
+
+@import "open-props/open-props.min.css" layer(openprops);
+@import "open-props/normalize.min.css" layer(openprops);
+@import "open-props/colors-oklch.min.css" layer(openprops);
+
+/* Theme */
+@import "./theme.css";
+@import "./graph-theme.css" layer(theme);
+
+/*
+* Components
+* Components are divided into two categories - if they are stand-alone (base) or if they have dependencies (has-deps).
+*/
+/*** Base components (no dependencies)  */
+@import "./actions/button.css";
+@import "./actions/option.css";
+
+/*** Has dependencies */
+@import "./actions/button-group.css";

@@ -1,0 +1,191 @@
+.callgraph {
+  --bold-border: 3.2;
+
+  width: 100%;
+  height: 100%;
+  outline: none;
+
+  cursor: default;
+
+  user-select: none;
+
+  & > #graph0 {
+    & > polygon:first-of-type {
+      fill: var(--background-color);
+    }
+
+    & > #faded-group {
+      & > :where(.node, .cluster) {
+        opacity: 0.2;
+      }
+
+      & > .edge {
+        opacity: 0.05;
+      }
+    }
+  }
+
+  .edge {
+    & > path:not(.hover-path) {
+      stroke: var(--edge-color);
+      stroke-width: 3;
+    }
+    & > polygon {
+      stroke: var(--edge-color);
+      fill: var(--edge-color);
+    }
+    & > path.hover-path {
+      stroke: transparent;
+      stroke-width: 15;
+    }
+
+    &.impl {
+      & > path {
+        stroke-dasharray: 8, 3;
+      }
+      & > polygon {
+        stroke-width: 2;
+        fill: none !important;
+      }
+    }
+
+    &:hover {
+      --edge-color: var(--selected-color);
+    }
+    &.incoming {
+      --edge-color: var(--edge-incoming-color);
+    }
+    &.outgoing {
+      --edge-color: var(--edge-outgoing-color);
+    }
+    &.incoming.outgoing {
+      --edge-color: var(--edge-incoming-outgoing-color);
+    }
+  }
+
+  .cluster {
+    polygon {
+      stroke-width: 1.6;
+    }
+
+    .cluster-label {
+      cursor: pointer;
+      fill: var(--cluster-label-bg-color);
+      rx: 18px;
+    }
+
+    text {
+      pointer-events: none;
+    }
+
+    &.selected {
+      polygon {
+        stroke-width: var(--bold-border);
+        stroke: var(--selected-color);
+      }
+
+      --cluster-label-bg-color: color-mix(in srgb, var(--selected-color) 30%, transparent);
+    }
+  }
+
+  .node {
+    & > rect {
+      rx: 20px;
+      fill: var(--node-bg-color);
+      filter: url(#shadow);
+    }
+    &.selected > rect {
+      stroke: var(--selected-color);
+      stroke-width: var(--bold-border);
+    }
+
+    & > .title {
+      cursor: pointer;
+
+      & > text {
+        font-weight: bold;
+      }
+    }
+  }
+
+  .cell {
+    --bg-color: var(--symbol-default-bg-color);
+    --border-color: var(--symbol-default-border-color);
+    --border-width: 1.6;
+
+    & > rect {
+      rx: 10px;
+      fill: var(--bg-color);
+      stroke: var(--border-color);
+      stroke-width: var(--border-width);
+    }
+    & > text {
+      fill: var(--symbold-default-text-color);
+    }
+
+    &:where(.highlight, .selected, :not(:has(> .cell:hover)):hover) {
+      --border-width: var(--bold-border);
+    }
+
+    &.highlight > rect {
+      stroke: url(#highlightGradient);
+    }
+    &.selected > rect {
+      filter: drop-shadow(3px 3px 6px var(--border-color));
+    }
+
+    /* symbols */
+
+    &.interface {
+      --bg-color: var(--interface-bg-color);
+      --border-color: var(--interface-border-color);
+
+      & > rect {
+        stroke-dasharray: 7, 5;
+      }
+    }
+
+    &.module {
+      --bg-color: var(--module-bg-color);
+      --border-color: var(--module-border-color);
+    }
+    &.constructor {
+      --bg-color: var(--constructor-bg-color);
+      --border-color: var(--constructor-border-color);
+    }
+    &.function {
+      --bg-color: var(--function-bg-color);
+      --border-color: var(--function-border-color);
+    }
+    &.method {
+      --bg-color: var(--method-bg-color);
+      --border-color: var(--method-border-color);
+    }
+    &:where(.class, .struct, .enum) {
+      --bg-color: var(--struct-bg-color);
+      --border-color: var(--struct-border-color);
+
+      & > rect {
+        rx: unset;
+      }
+
+      & > text {
+        transform: translateY(1.5px);
+
+        &:first-of-type {
+          fill: var(--type-icon-color);
+        }
+      }
+    }
+    &:where(.field, .property) {
+      & > rect {
+        rx: unset;
+      }
+
+      & > text:first-of-type {
+        font-style: italic;
+        fill: var(--property-icon-color);
+      }
+    }
+  }
+}

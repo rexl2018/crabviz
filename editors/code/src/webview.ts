@@ -4,6 +4,8 @@ import { getNonce } from './webview/utils';
 import { saveSVG, saveJSON, saveDot, saveMermaid, saveHTML } from './webview/exporters';
 import { handleGotoDefinition } from './webview/navigation';
 
+import { GlobalPosition } from './generator';
+
 export class CallGraphPanel {
 	public static readonly viewType = 'crabviz.callgraph';
 
@@ -25,7 +27,7 @@ export class CallGraphPanel {
 			enableScripts: true
 		});
 
-		panel.iconPath = vscode.Uri.joinPath(this._extensionUri, 'media', 'icon.svg');
+		panel.iconPath = vscode.Uri.joinPath(this._extensionUri, 'assets', 'icon.svg');
 
 		this._panel = panel;
 

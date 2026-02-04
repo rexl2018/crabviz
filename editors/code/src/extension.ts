@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
 
-import { initSync, set_panic_hook } from '../crabviz';
-import { CallGraphPanel } from './webview';
+import { initSync, set_panic_hook } from '../out/crabviz';
 import { CommandManager } from './command-manager';
 
 export async function activate(context: vscode.ExtensionContext) {
 	await vscode.workspace.fs.readFile(
-		vscode.Uri.joinPath(context.extensionUri, 'crabviz/index_bg.wasm')
+		vscode.Uri.joinPath(context.extensionUri, 'out/crabviz/index_bg.wasm')
 	).then(bits => {
 		initSync(bits);
 		set_panic_hook();
@@ -22,7 +21,6 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('crabviz.customCallGraphList', manager.customCallGraphList.bind(manager)),
 		vscode.commands.registerCommand('crabviz.customCallGraphDelete', manager.customCallGraphDelete.bind(manager)),
 		vscode.commands.registerCommand('crabviz.customCallGraphGenerate', manager.customCallGraphGenerate.bind(manager)),
-
 	);
 }
 

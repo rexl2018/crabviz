@@ -1,0 +1,162 @@
+@layer components.has-deps {
+  :where(.combo-box) {
+    --height: 40px;
+    --border-radius: calc(var(--height) / 2);
+
+    height: var(--height);
+    width: 360px;
+    border: 1px var(--blue-2) solid;
+    border-radius: var(--border-radius);
+
+    position: relative;
+
+    button {
+      flex: 0 0 auto;
+    }
+
+    .select-btn {
+      height: 100%;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-left: 1rem;
+      padding-right: 10px;
+
+      background: transparent;
+
+      user-select: none;
+
+      svg {
+        width: 20px;
+        height: 20px;
+      }
+    }
+
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: black;
+
+      .kind {
+        --bg-color: var(--symbol-default-bg-color);
+        --border-color: var(--symbol-default-border-color);
+
+        border: 1px solid var(--border-color);
+        border-radius: 9px;
+        background: var(--bg-color);
+        color: var(--symbold-default-text-color);
+        padding: 2px 4px;
+        flex-shrink: 0;
+
+        &.func {
+          --bg-color: var(--function-bg-color);
+          --border-color: var(--function-border-color);
+        }
+        &.method {
+          --bg-color: var(--method-bg-color);
+          --border-color: var(--method-border-color);
+        }
+        &.interface {
+          --bg-color: var(--interface-bg-color);
+          --border-color: var(--interface-border-color);
+        }
+        &.constructor {
+          --bg-color: var(--constructor-bg-color);
+          --border-color: var(--constructor-border-color);
+        }
+        &.module {
+          --bg-color: var(--module-bg-color);
+          --border-color: var(--module-border-color);
+        }
+        &:where(.class, .struct, .enum) {
+          --bg-color: var(--struct-bg-color);
+          --border-color: var(--struct-border-color);
+        }
+      }
+
+      .label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      :where(&:has(> .kind:empty)) {
+        .kind {
+          display: none;
+        }
+
+        .label {
+          font-weight: bold;
+        }
+      }
+    }
+
+    .bar {
+      display: flex;
+      align-items: center;
+
+      height: 100%;
+
+      .button {
+        --_margin: 5px;
+
+        --_min-height: calc(var(--height) - var(--_margin) * 2);
+        --_border-radius: calc(var(--_min-height) / 2);
+
+        width: var(--_min-height);
+        height: var(--_min-height);
+        border: 1px solid var(--blue-4);
+        margin: var(--_margin);
+
+        padding-block: 0;
+        padding-inline: 0;
+      }
+
+      .option {
+        flex-grow: 1;
+
+        &:hover {
+          background: inherit;
+        }
+      }
+    }
+
+    .popover {
+      display: flex;
+      flex-direction: column;
+      justify: stretch;
+      align-items: center;
+      gap: 8px;
+
+      input {
+        height: 2.2rem;
+        width: 98%;
+        padding-left: 0.8rem;
+        border-radius: 0.7rem;
+        color: black;
+        background: inherit;
+        outline: 1.5px solid var(--blue-2);
+
+        &:focus {
+          outline: 2px solid var(--blue-3) !important;
+        }
+      }
+
+      .option-list {
+        width: 100%;
+        max-height: calc(6 * var(--option-height));
+        overflow-y: scroll;
+
+        .prompt {
+          height: 26px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          user-select: none;
+        }
+      }
+    }
+  }
+}

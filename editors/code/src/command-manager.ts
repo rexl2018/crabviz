@@ -61,7 +61,7 @@ export class CommandManager {
 			return;
 		}
 
-		const languages = Array.from(files.keys()).map(lang => ({ label: lang }));
+		const languages = Array.from(files.keys(), lang => ({ label: lang }));
 		let lang: string;
 		if (languages.length > 1) {
 			const selectedItem = await vscode.window.showQuickPick(languages, {
@@ -90,8 +90,15 @@ export class CommandManager {
 
 			return generator.generateCallGraph(files.get(lang)!, progress, token);
 		})
-		.then(svg => {
+		.then(async graph => {
 			if (cancelled) { return; }
+
+			// Generate SVG from DOT source
+			const dot = generator.generateDotSource();
+			const viz = await import('@viz-js/viz');
+			const vizInstance = await viz.instance();
+			const renderOptions = { format: 'svg', engine: 'dot' };
+			const svg = await vizInstance.renderString(dot, renderOptions);
 
 			const panel = new CallGraphPanel(this.context.extensionUri);
 			// 设置当前的Generator实例，以便在导出DOT文件时能够访问它
@@ -111,6 +118,7 @@ export class CommandManager {
 
 		const lang = this.languages.get(extname(uri.path)) ?? "";
 
+		// 在外部创建generator，以便在then回调中可用
 		const generator = new Generator(root.uri, lang);
 
 		vscode.window.withProgress({
@@ -119,11 +127,20 @@ export class CommandManager {
 		}, _ => {
 			return generator.generateFuncCallGraph(uri, anchor, ig);
 		})
-		.then(svg => {
-			if (!svg) {
+		.then(async (res) => {
+			if (!res) {
 				vscode.window.showErrorMessage('No results');
 				return;
 			}
+
+			const [graph, funcPos] = res;
+
+			// Generate SVG from DOT source
+			const dot = generator.generateDotSource();
+			const viz = await import('@viz-js/viz');
+			const vizInstance = await viz.instance();
+			const renderOptions = { format: 'svg', engine: 'dot' };
+			const svg = await vizInstance.renderString(dot, renderOptions);
 
 			const panel = new CallGraphPanel(this.context.extensionUri);
 			// 设置当前的Generator实例，以便在导出DOT文件时能够访问它
