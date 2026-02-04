@@ -2,7 +2,7 @@
   "name": "crabviz",
   "displayName": "Crabviz",
   "description": "interactive call graph generator",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "Rex",
   "author": {
     "name": "Chan HoCheung"
