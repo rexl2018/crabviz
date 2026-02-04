@@ -1,0 +1,9 @@
+@import "../styles/svg.css" layer(components.base);
+
+@layer compoent.has-deps {
+  :where(.viewport) {
+    width: 100%;
+    height: 100%;
+    background-color: var(--background-color);
+  }
+}

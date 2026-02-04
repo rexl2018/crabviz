@@ -1,24 +1,26 @@
 import * as vscode from 'vscode';
-import { instance as vizInstance } from '@viz-js/viz';
 
 import { retryCommand } from './utils/command';
-import { GraphGenerator } from '../crabviz';
+import { GraphGenerator } from '../out/crabviz';
 import { Ignore } from 'ignore';
 import * as path from "path";
 
 const FUNC_KINDS: readonly vscode.SymbolKind[] = [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor];
 
-const viz = vizInstance();
-const renderOptions = {format: "svg"};
-
 const isWindows = process.platform === 'win32';
+
+export type GlobalPosition = {
+  path: string;
+  line: number;
+  character: number;
+};
 
 export class Generator {
   private root: string;
   private inner: GraphGenerator;
   private lang: string;
 
-  public constructor(root: vscode.Uri, lang: string) {
+  public constructor(root: vscode.Uri, lang: string, filter: boolean = false) {
     this.root = normalizedPath(root.path);
     this.lang = lang;
     this.inner = new GraphGenerator(this.root, lang);
@@ -60,7 +62,7 @@ export class Generator {
     files: vscode.Uri[],
     progress: vscode.Progress<{ message?: string; increment?: number }>,
     token: vscode.CancellationToken,
-  ): Promise<string> {
+  ): Promise<any> {
     files.sort((f1, f2) => f2.path.split('/').length - f1.path.split('/').length);
 
     const funcMap = new Map<string, Set<string>>(files.map(f => [normalizedPath(f.path), new Set()]));
@@ -150,12 +152,10 @@ export class Generator {
       progress.report({ message: `${finishedCount} / ${files.length}`, increment: 100 / files.length });
     }
 
-    const dot = this.inner.generate_dot_source();
-
-    return await viz.then(viz => viz.renderString(dot, renderOptions));
+    return this.inner.generate_graph();
   }
 
-  async generateFuncCallGraph(uri: vscode.Uri, anchor: vscode.Position, ig: Ignore): Promise<string | null> {
+  async generateFuncCallGraph(uri: vscode.Uri, anchor: vscode.Position, ig: Ignore): Promise<any | null> {
     const files = new Map<string, VisitedFile>();
 
     let items: vscode.CallHierarchyItem[];
@@ -170,10 +170,19 @@ export class Generator {
       return null;
     }
 
+    let funcPos: GlobalPosition | undefined;
     // 串行处理items，避免并发借用问题
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      files.set(normalizedPath(item.uri.path), new VisitedFile(item.uri));
+      const itemPath = normalizedPath(item.uri.path);
+      files.set(itemPath, new VisitedFile(item.uri));
+
+      const itemStart = item.selectionRange.start;
+      funcPos = {
+        path: itemPath,
+        line: itemStart.line,
+        character: itemStart.character,
+      };
 
       await this.resolveIncomingCalls(item, files, ig);
       await this.resolveOutgoingCalls(item, files, ig);
@@ -203,9 +212,7 @@ export class Generator {
       this.inner.highlight(normalizedPath(item.uri.path), item.selectionRange.start);
     }
 
-    const dot = this.inner.generate_dot_source();
-
-    return await viz.then(viz => viz.renderString(dot, renderOptions));
+    return [this.inner.generate_graph(), funcPos!];
   }
 
   filterSymbols(symbols: vscode.DocumentSymbol[], funcs: vscode.Range[], ctx = { i: 0 }): vscode.DocumentSymbol[] {
@@ -369,10 +376,9 @@ class VisitedFile {
   }
 
   sortedFuncs(): vscode.Range[] {
-    const funcs = Array.from(this.funcs.values());
-    return funcs
-            .sort((p1, p2) => p1[0].start.compareTo(p2[0].start))
-            .map(tuple => tuple[0]);
+    return Array
+            .from(this.funcs.values(), f => f[0])
+            .sort((p1, p2) => p1.start.compareTo(p2.start));
   }
 };
 
