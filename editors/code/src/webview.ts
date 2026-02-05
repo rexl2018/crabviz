@@ -913,20 +913,26 @@ export class CallGraphPanel {
 							if (e.buttons === 1) { // Left button is pressed
 								const deltaX = e.clientX - lastX;
 								const deltaY = e.clientY - lastY;
-								const totalDelta = Math.abs(e.clientX - panStartX) + Math.abs(e.clientY - panStartY);
-								
-								if (totalDelta > DRAG_THRESHOLD) {
-									if (!isDragging) {
-										isDragging = true;
-										this.svg.style.cursor = 'grabbing';
-									}
-									hasDragged = true;
+
+								// Once dragging has started, continue updating position
+								if (isDragging) {
 									translateX += deltaX;
 									translateY += deltaY;
 									lastX = e.clientX;
 									lastY = e.clientY;
 									updateTransform();
 									saveState();
+								} else {
+									// Check if we should start dragging
+									const totalDelta = Math.abs(e.clientX - panStartX) + Math.abs(e.clientY - panStartY);
+									if (totalDelta > DRAG_THRESHOLD) {
+										isDragging = true;
+										hasDragged = true;
+										this.svg.style.cursor = 'grabbing';
+										// Update lastX/lastY to current position to avoid jump
+										lastX = e.clientX;
+										lastY = e.clientY;
+									}
 								}
 							}
 						});
