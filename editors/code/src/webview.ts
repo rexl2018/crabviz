@@ -799,6 +799,10 @@ export class CallGraphPanel {
 				let isDragging = false;
 				let lastX = 0;
 				let lastY = 0;
+				let rafId = null; // for requestAnimationFrame throttling
+
+				// Enable hardware acceleration
+				g0.style.willChange = 'transform';
 				
 				// State persistence
 				const saveState = () => {
@@ -897,6 +901,18 @@ export class CallGraphPanel {
 						const DRAG_THRESHOLD = 6; // pixels - same as original click detection
 						const onSelectElem = this.onSelectElemCallback;
 
+						// Convert screen pixels to SVG user units
+						// CSS transform on SVG elements uses SVG coordinate system (viewBox units),
+						// not screen pixels. We need to scale mouse movement accordingly.
+						const screenToSvgScale = () => {
+							const svgRect = this.svg.getBoundingClientRect();
+							const viewBox = this.svg.viewBox.baseVal;
+							return {
+								x: viewBox.width / svgRect.width,
+								y: viewBox.height / svgRect.height
+							};
+						};
+
 						this.svg.addEventListener('mousedown', (e) => {
 							if (e.button === 0) { // Left mouse button
 								panStartX = e.clientX;
@@ -911,17 +927,24 @@ export class CallGraphPanel {
 
 						document.addEventListener('mousemove', (e) => {
 							if (e.buttons === 1) { // Left button is pressed
-								const deltaX = e.clientX - lastX;
-								const deltaY = e.clientY - lastY;
+								const screenDeltaX = e.clientX - lastX;
+								const screenDeltaY = e.clientY - lastY;
 
 								// Once dragging has started, continue updating position
 								if (isDragging) {
-									translateX += deltaX;
-									translateY += deltaY;
+									// Convert screen pixels to SVG units for 1:1 drag movement
+									const svgScale = screenToSvgScale();
+									translateX += screenDeltaX * svgScale.x;
+									translateY += screenDeltaY * svgScale.y;
 									lastX = e.clientX;
 									lastY = e.clientY;
-									updateTransform();
-									saveState();
+									// Use requestAnimationFrame for smooth rendering
+									if (!rafId) {
+										rafId = requestAnimationFrame(() => {
+											updateTransform();
+											rafId = null;
+										});
+									}
 								} else {
 									// Check if we should start dragging
 									const totalDelta = Math.abs(e.clientX - panStartX) + Math.abs(e.clientY - panStartY);
@@ -939,6 +962,16 @@ export class CallGraphPanel {
 
 						document.addEventListener('mouseup', (e) => {
 							if (e.button === 0) {
+								// Cancel any pending animation frame
+								if (rafId) {
+									cancelAnimationFrame(rafId);
+									rafId = null;
+									updateTransform(); // Apply final position
+								}
+								// Save state only when drag ends
+								if (isDragging) {
+									saveState();
+								}
 								isDragging = false;
 								this.svg.style.cursor = 'grab';
 								
